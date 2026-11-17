@@ -1,4 +1,4 @@
-# Hy4email Android · Rust + GitHub Actions
+# muse-email
 
 给 [ifwqu/domainmail](https://github.com/ifwqu/domainmail)（自建域名邮箱服务器）做的安卓客户端。
 
