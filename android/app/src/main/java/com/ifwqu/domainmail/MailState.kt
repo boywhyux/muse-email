@@ -23,6 +23,7 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
     val appContext: Context get() = context.applicationContext
 
     private val prefs = context.getSharedPreferences("domainmail", Context.MODE_PRIVATE)
+    private val credentialsStore = CredentialsStore(context)
 
     var screen: Screen by mutableStateOf(Screen.Login)
     var tab by mutableStateOf(0)
@@ -32,6 +33,7 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
 
     var user: User? by mutableStateOf(null)
     var savedBaseUrl by mutableStateOf("")
+    var savedCredentials: SavedCredentials? by mutableStateOf(null)
 
     var folders: List<Folder> by mutableStateOf(emptyList())
     var mailboxes: List<Mailbox> by mutableStateOf(emptyList())
@@ -80,6 +82,7 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
     fun start() = go {
         val base = prefs.getString("baseUrl", "") ?: ""
         savedBaseUrl = base
+        savedCredentials = credentialsStore.load()
         if (base.isBlank()) {
             screen = Screen.Login
             return@go
@@ -99,7 +102,7 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
         }
     }
 
-    fun login(base: String, email: String, password: String, insecure: Boolean) = go {
+    fun login(base: String, email: String, password: String, insecure: Boolean, rememberMe: Boolean = false) = go {
         val normalized = base.trim().trimEnd('/')
         initClient(normalized, insecure)
         prefs.edit()
@@ -111,6 +114,14 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
             "login", JSONObject().put("email", email.trim()).put("password", password)
         )
         user = User.from(result.obj("user"))
+        // 只有登录成功才会走到这里：勾选就加密存账号密码，不勾选就清掉旧的。
+        if (rememberMe) {
+            credentialsStore.save(normalized, email.trim(), password)
+            savedCredentials = SavedCredentials(normalized, email.trim(), password)
+        } else {
+            credentialsStore.clear()
+            savedCredentials = null
+        }
         currentMailbox = user?.email
         tab = 0
         screen = Screen.List

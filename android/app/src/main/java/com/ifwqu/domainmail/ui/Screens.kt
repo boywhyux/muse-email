@@ -218,13 +218,26 @@ private fun CopyAddressButton(address: String, label: String = "已复制邮箱�
 @Composable
 private fun LoginScreen(state: MailState) {
     val palette = dm()
-    var base by remember { mutableStateOf(state.savedBaseUrl.ifBlank { "https://" }) }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    val saved = state.savedCredentials
+    var base by remember { mutableStateOf(saved?.baseUrl?.ifBlank { "https://" } ?: state.savedBaseUrl.ifBlank { "https://" }) }
+    var email by remember { mutableStateOf(saved?.email ?: "") }
+    var password by remember { mutableStateOf(saved?.password ?: "") }
     var insecure by remember { mutableStateOf(false) }
+    var rememberMe by remember { mutableStateOf(saved != null) }
 
     LaunchedEffect(state.savedBaseUrl) {
         if (state.savedBaseUrl.isNotBlank() && base == "https://") base = state.savedBaseUrl
+    }
+
+    // 冷启动时记住的账号密码在 start() 里才读出来，到了就填上（用户已输入的不覆盖）。
+    LaunchedEffect(state.savedCredentials) {
+        val c = state.savedCredentials ?: return@LaunchedEffect
+        if (email.isBlank() && password.isBlank()) {
+            if (base == "https://" || base.isBlank()) base = c.baseUrl.ifBlank { "https://" }
+            email = c.email
+            password = c.password
+            rememberMe = true
+        }
     }
 
     Column(
@@ -282,12 +295,19 @@ private fun LoginScreen(state: MailState) {
                     androidx.compose.material3.Checkbox(checked = insecure, onCheckedChange = { insecure = it })
                     Text("允许自签证书 / 不安全 TLS", fontSize = 13.sp, color = palette.ink2)
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { rememberMe = !rememberMe },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.Checkbox(checked = rememberMe, onCheckedChange = { rememberMe = it })
+                    Text("记住账号密码", fontSize = 13.sp, color = palette.ink2)
+                }
             }
         }
 
         Spacer(Modifier.height(20.dp))
         Button(
-            onClick = { state.login(base, email, password, insecure) },
+            onClick = { state.login(base, email, password, insecure, rememberMe) },
             enabled = !state.busy,
             colors = ButtonDefaults.buttonColors(containerColor = palette.blue),
             shape = RoundedCornerShape(12.dp),
@@ -298,7 +318,7 @@ private fun LoginScreen(state: MailState) {
             Text("登录", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(14.dp))
-        Text("会话只保存 dm_session，不保存密码", fontSize = 11.sp, color = palette.muted)
+        Text("不勾选只保存会话；勾选后账号密码加密存在本机", fontSize = 11.sp, color = palette.muted)
     }
 }
 

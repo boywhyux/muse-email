@@ -215,7 +215,7 @@ python tools/github_build.py all                 # push → dispatch → 等结�
 
 ## 安全与实现取舍
 
-- **密码不落盘**：只持久化 `dm_session` token，文件权限 `0600`（Unix），App 沙箱再隔离一层。
+- **密码默认不落盘**：只持久化 `dm_session` token，文件权限 `0600`（Unix），App 沙箱再隔离一层。登录页勾选「记住账号密码」时，账号密码才存进 EncryptedSharedPreferences（Android Keystore 保管密钥），不勾选不存。
 - **TLS 用 rustls**（纯 Rust，无 OpenSSL），Android 交叉编译零原生库依赖；`danger_accept_invalid_certs` 只在用户显式勾选「自签证书」时打开。
 - **WebView 渲染 HTML 邮件时禁用 JS、禁用文件访问、阻断远程资源加载**，降低追踪像素与本地文件读取风险。
 - **JNI 边界 catch_unwind**：Rust 侧任何 panic 都转成 `{"ok":false,"error":{"kind":"panic",...}}`，不会炸掉进程。
