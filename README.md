@@ -189,11 +189,11 @@ DM_KEY_PASSWORD
 
 **应用名与图标**：App 显示名为 **muse-email**（`res/values/strings.xml` 的 `app_name`）。`applicationId` 保持 `com.muse.email` 不变，改名不影响签名与覆盖安装。
 
-图标使用用户提供的表情包形象（深棕波波头、大眼睛、红围巾、浅蓝背景）：
+图标使用 Muse 工作时的形象（奶油色毛绒小人，戴灰色耳机、在银色笔记本电脑前打字，白色背景）：
 
 - 源图经居中裁切为 432×432 PNG，放在 `branding/mascot.png`；由于 Git Data API 只推文本，仓库里保存的是 `branding/mascot.png.base64`。
 - workflow 的 `Decode launcher mascot` 步骤把它解码到 `res/drawable-xxxhdpi/mascot.png`（432px @ 4x = 108dp，正好是 adaptive icon foreground 画布尺寸）。
-- `mipmap-anydpi-v26/ic_launcher*.xml` 的 foreground 与 `mipmap/ic_launcher*.xml` 回退图标都引用 `@drawable/mascot`；`ic_launcher_background` 取原图四角采样色 `#E1F7FC`，避免视差时露出色差。
+- `mipmap-anydpi-v26/ic_launcher*.xml` 的 foreground 与 `mipmap/ic_launcher*.xml` 回退图标都引用 `@drawable/mascot`；`ic_launcher_background` 取原图四角采样色 `#FFFFFF`，避免视差时露出色差。
 - 顶栏品牌位 `BrandMark` 通过 `painterResource(R.drawable.mascot)` 复用同一张图，启动图标与界面顶部是同一个形象。
 
 ### 只用 GitHub API 跑完全程（推荐）
