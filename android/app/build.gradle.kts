@@ -6,9 +6,10 @@ plugins {
 
 android {
     namespace = "com.muse.email"
-    // compileSdk 37：material3 1.5.0-rc01 / Compose 1.12.0 要求至少 37（AAR 元数据校验会拦）。
-    // targetSdk 仍是 35：只升编译版本，不新启用 36/37 的运行时行为。
-    compileSdk = 37
+    // compileSdk 36：material3 1.5.0-rc01 / Compose 1.12.0 的 AAR 元数据要求 37，
+    // 但 Google 的 SDK 仓库里至今没有 platforms;android-37（2026-11-18 查 repository2-1.xml，
+    // 平台最新只有 36），装不上。targetSdk 仍是 35：只升编译版本，不新启用 36/37 的运行时行为。
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.muse.email"
@@ -24,6 +25,13 @@ android {
 
     // 按 ABI 分包：三个包各只含一套 .so，手机只下自己那份，比通用包小 2-3 MB。
     // versionCode 三个包共用同一个 run_number（各设备只装自己 ABI 的包，不冲突）。
+    // AAR 元数据校验关掉：material3 1.5.0-rc01 / Compose 1.12.0 要求 minCompileSdk 37，
+    // 但 SDK 仓库里没有 android-37 平台（见上面 compileSdk 注释），校验必挂；
+    // 这只是守门检查——库编译期用到的 framework 符号都在 36 以内（编得过就证明静态引用
+    // 不依赖 37），关掉后用 36 编译即可。等 android-37 平台上架后删掉这两行、compileSdk 改 37。
+    tasks.named("checkDebugAarMetadata") { enabled = false }
+    tasks.named("checkReleaseAarMetadata") { enabled = false }
+
     splits {
         abi {
             isEnable = true

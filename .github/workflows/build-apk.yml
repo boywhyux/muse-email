@@ -41,7 +41,7 @@ jobs:
           if [ -z "$SDKMANAGER" ]; then echo "::error::找不到 sdkmanager"; exit 1; fi
           echo "sdkmanager = $SDKMANAGER"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" --install "ndk;26.3.11579264" "platforms;android-37" "build-tools;37.0.0"
+          "$SDKMANAGER" --install "ndk;26.3.11579264" "platforms;android-36" "build-tools;37.0.0"
           echo "sdk.dir=$SDK" > android/local.properties
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
