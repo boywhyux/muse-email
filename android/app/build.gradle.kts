@@ -80,7 +80,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
 
     buildFeatures { compose = true }
 
@@ -92,6 +91,11 @@ android {
     sourceSets {
         getByName("main") { jniLibs.srcDirs("src/main/jniLibs") }
     }
+}
+
+// AGP 9 内置 Kotlin 后 kotlinOptions 已不存在，改用顶层的 jvmToolchain 指定 Kotlin 的 JDK。
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {
