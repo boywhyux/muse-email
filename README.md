@@ -187,7 +187,7 @@ DM_KEY_PASSWORD
 
 > 注意：换用新签名密钥后，第一次从旧版（v0.2.0 及之前）升级仍需**先卸载一次**——旧包是随机 debug key 签的。从这次发版起，后续版本之间就能直接覆盖安装了。
 
-**应用名与图标**：App 显示名为 **Hy4email**（`res/values/strings.xml` 的 `app_name`）。`applicationId` 保持 `com.ifwqu.domainmail` 不变，改名不影响签名与覆盖安装。
+**应用名与图标**：App 显示名为 **muse-email**（`res/values/strings.xml` 的 `app_name`）。`applicationId` 保持 `com.ifwqu.domainmail` 不变，改名不影响签名与覆盖安装。
 
 图标使用用户提供的表情包形象（深棕波波头、大眼睛、红围巾、浅蓝背景）：
 
@@ -222,6 +222,13 @@ python tools/github_build.py all                 # push → dispatch → 等结�
 - **响应原样透传**：`dispatch` 返回服务端原始 JSON，服务端以后加字段 App 不用重新发版。
 
 ---
+
+## 界面更新（2026-11-18）
+
+- **下拉刷新**：邮件列表支持 Material 3 `PullToRefreshBox` 下拉刷新；空状态原来就写着“下拉刷新”，现在手势和提示对上了。
+- **主题切换**：设置 → 外观，可选「跟随系统 / 浅色 / 深色」，选择存 `SharedPreferences`（`themeMode`），冷启动直接读，不闪一下再切。
+- **动态取色**：设置 → 外观，Android 12 及以上可开「动态取色」，主色跟随系统壁纸（`dynamicLightColorScheme` / `dynamicDarkColorScheme`）；只换主色，表面、文字、线条仍用自家调色盘。低于 Android 12 时开关不显示。
+- **滑动操作**：邮件行左滑进废纸篓（已在废纸篓里再左滑是彻底删除），右滑切换已读/未读；两边都是可逆操作，划完行自动弹回。删除用的是服务端 `DELETE /api/messages/:id`，移废纸篓用 `POST /api/messages/:id/move`。
 
 ## 已知边界
 

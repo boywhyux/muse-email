@@ -35,6 +35,11 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
     var savedBaseUrl by mutableStateOf("")
     var savedCredentials: SavedCredentials? by mutableStateOf(null)
 
+    // 外观偏好：启动时就从 prefs 读，避免冷启动先闪一下系统主题再切。
+    var themeMode by mutableStateOf(prefs.getString("themeMode", "system") ?: "system")
+    var dynamicColor by mutableStateOf(prefs.getBoolean("dynamicColor", false))
+    var refreshing by mutableStateOf(false)
+
     var folders: List<Folder> by mutableStateOf(emptyList())
     var mailboxes: List<Mailbox> by mutableStateOf(emptyList())
     var currentMailbox: String? by mutableStateOf(null)
@@ -128,7 +133,14 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
         refreshAll()
     }
 
-    fun refresh() = go { refreshAll() }
+    fun refresh() = go {
+        refreshing = true
+        try {
+            refreshAll()
+        } finally {
+            refreshing = false
+        }
+    }
 
     private suspend fun refreshAll() {
         loadFolders()
@@ -212,6 +224,11 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
             if (it.id == message.id) it.copy(flagged = !message.flagged) else it
         }
         detail = detail?.copy(flagged = !message.flagged)
+    }
+
+    fun markRead(id: Long) = go {
+        RustBridge.call("markRead", JSONObject().put("id", id))
+        messages = messages.map { if (it.id == id) it.copy(seen = true) else it }
     }
 
     fun markUnread(id: Long) = go {
@@ -329,5 +346,15 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
 
     fun dismissToast() {
         toast = null
+    }
+
+    fun setThemeMode(mode: String) {
+        themeMode = mode
+        prefs.edit().putString("themeMode", mode).apply()
+    }
+
+    fun setDynamicColor(enabled: Boolean) {
+        dynamicColor = enabled
+        prefs.edit().putBoolean("dynamicColor", enabled).apply()
     }
 }

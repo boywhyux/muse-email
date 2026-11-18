@@ -4,6 +4,7 @@ package com.ifwqu.domainmail.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
 import android.webkit.WebView
 import android.widget.Toast
@@ -14,6 +15,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +50,8 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MailOutline
+import androidx.compose.material.icons.filled.MarkEmailRead
+import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -77,11 +81,17 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -129,7 +139,12 @@ fun DomainMailApp() {
     val state = remember { MailState(context, scope) }
     LaunchedEffect(Unit) { state.start() }
 
-    DmTheme {
+    val dark = when (state.themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> isSystemInDarkTheme()
+    }
+    DmTheme(dark = dark, dynamicColor = state.dynamicColor) {
         val palette = dm()
         Surface(modifier = Modifier.fillMaxSize(), color = palette.appBg) {
             Box(Modifier.fillMaxSize()) {
@@ -179,7 +194,7 @@ fun DomainMailApp() {
 private fun BrandMark(size: Int = 34) {
     Image(
         painter = painterResource(R.drawable.mascot),
-        contentDescription = "Hy4email",
+        contentDescription = "muse-email",
         contentScale = ContentScale.Crop,
         modifier = Modifier
             .size(size.dp)
@@ -250,7 +265,7 @@ private fun LoginScreen(state: MailState) {
         Spacer(Modifier.height(24.dp))
         BrandMark(56)
         Spacer(Modifier.height(16.dp))
-        Text("Hy4email", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = palette.ink)
+        Text("muse-email", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = palette.ink)
         Text("你的自建域名邮箱", fontSize = 13.sp, color = palette.muted)
         Spacer(Modifier.height(28.dp))
 
@@ -351,7 +366,7 @@ private fun MainScreen(state: MailState) {
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
-                                "Hy4email",
+                                "muse-email",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = palette.ink,
@@ -481,11 +496,18 @@ private fun RowScope.DmNavItem(
 @Composable
 private fun MailListScreen(state: MailState) {
     val palette = dm()
+    val pullState = rememberPullToRefreshState()
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(0.dp)
+    PullToRefreshBox(
+        isRefreshing = state.refreshing,
+        onRefresh = { state.refresh() },
+        state = pullState,
+        modifier = Modifier.fillMaxSize()
     ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
         item {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 FolderRow(state)
@@ -513,6 +535,7 @@ private fun MailListScreen(state: MailState) {
             }
             Spacer(Modifier.height(12.dp))
         }
+    }
     }
 }
 
@@ -732,79 +755,134 @@ private fun FilterRow(state: MailState) {
 private fun MessageRow(state: MailState, message: MessageSummary) {
     val palette = dm()
     val sender = message.fromName.ifBlank { message.from.ifBlank { "(未知发件人)" } }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(if (message.seen) Color.Transparent else palette.blueSoft.copy(alpha = 0.45f))
-            .clickable { state.open(message.id) }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        DmAvatar(sender, message.from, 40.dp)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    sender,
-                    fontWeight = if (message.seen) FontWeight.Normal else FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = palette.ink2,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(formatDate(message.date), fontSize = 11.sp, color = palette.muted)
+    // 左滑进废纸篓（在废纸篓里再左滑就是彻底删除），右滑切换已读/未读。
+    // 两边都是可逆操作，划完行自动弹回，不会卡在半路上。
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    if (message.seen) state.markUnread(message.id) else state.markRead(message.id)
+                    false
+                }
+                SwipeToDismissBoxValue.EndToStart -> {
+                    if (state.currentFolder == "Trash") {
+                        state.deleteMessage(message.id)
+                        state.toast = "已删除"
+                    } else {
+                        state.moveMessage(message.id, "Trash")
+                        state.toast = "已移到废纸篓"
+                    }
+                    false
+                }
+                SwipeToDismissBoxValue.Settled -> true
             }
-            Spacer(Modifier.height(2.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    message.subject,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = if (message.seen) FontWeight.Normal else FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    color = palette.ink,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                if (message.hasAttachment) {
-                    Spacer(Modifier.width(4.dp))
+        }
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            val direction = dismissState.dismissDirection
+            if (direction != SwipeToDismissBoxValue.Settled) {
+                val isReadAction = direction == SwipeToDismissBoxValue.StartToEnd
+                val bg = if (isReadAction) palette.blue else palette.danger
+                val icon = when {
+                    isReadAction && message.seen -> Icons.Default.MarkEmailUnread
+                    isReadAction -> Icons.Default.MarkEmailRead
+                    else -> Icons.Default.Delete
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(bg),
+                    contentAlignment = if (isReadAction) Alignment.CenterStart else Alignment.CenterEnd
+                ) {
                     Icon(
-                        Icons.Default.AttachFile,
-                        contentDescription = "有附件",
-                        tint = palette.muted,
-                        modifier = Modifier.size(14.dp)
+                        icon,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.padding(horizontal = 20.dp).size(24.dp)
                     )
                 }
             }
-            if (message.snippet.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    message.snippet,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontSize = 12.sp,
-                    color = palette.muted2
-                )
+        },
+        content = {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (message.seen) Color.Transparent else palette.blueSoft.copy(alpha = 0.45f))
+                        .clickable { state.open(message.id) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DmAvatar(sender, message.from, 40.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                sender,
+                                fontWeight = if (message.seen) FontWeight.Normal else FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = palette.ink2,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(formatDate(message.date), fontSize = 11.sp, color = palette.muted)
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                message.subject,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontWeight = if (message.seen) FontWeight.Normal else FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                color = palette.ink,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            if (message.hasAttachment) {
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Default.AttachFile,
+                                    contentDescription = "有附件",
+                                    tint = palette.muted,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                        if (message.snippet.isNotBlank()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                message.snippet,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = 12.sp,
+                                color = palette.muted2
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    if (!message.seen) {
+                        Box(
+                            Modifier
+                                .size(7.dp)
+                                .background(palette.blue, CircleShape)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    IconButton(onClick = { state.toggleStar(message) }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            if (message.flagged) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = "星标",
+                            tint = if (message.flagged) palette.star else palette.muted.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+                HorizontalDivider(color = palette.lineLight, modifier = Modifier.padding(start = 68.dp))
             }
         }
-        Spacer(Modifier.width(6.dp))
-        if (!message.seen) {
-            Box(
-                Modifier
-                    .size(7.dp)
-                    .background(palette.blue, CircleShape)
-            )
-            Spacer(Modifier.width(6.dp))
-        }
-        IconButton(onClick = { state.toggleStar(message) }, modifier = Modifier.size(36.dp)) {
-            Icon(
-                if (message.flagged) Icons.Default.Star else Icons.Default.StarBorder,
-                contentDescription = "星标",
-                tint = if (message.flagged) palette.star else palette.muted.copy(alpha = 0.6f)
-            )
-        }
-    }
-    HorizontalDivider(color = palette.lineLight, modifier = Modifier.padding(start = 68.dp))
+    )
 }
 
 @Composable
@@ -1358,7 +1436,7 @@ private fun SettingsScreen(state: MailState) {
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        state.user?.displayName?.takeIf { it.isNotBlank() } ?: "Hy4email 用户",
+                        state.user?.displayName?.takeIf { it.isNotBlank() } ?: "muse-email 用户",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = palette.ink
@@ -1376,6 +1454,62 @@ private fun SettingsScreen(state: MailState) {
                 InfoRow("服务器", state.savedBaseUrl)
                 InfoRow("已用容量", "${state.settings.long("usedMb")} / ${state.settings.long("quotaMb")} MB")
                 InfoRow("管理员", if (state.user?.isAdmin == true) "是" else "否")
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        DmCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                DmSectionTitle("外观")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val chipColors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = palette.blueSoft,
+                        selectedLabelColor = palette.blue,
+                        containerColor = palette.cardBg,
+                        labelColor = palette.ink2
+                    )
+                    FilterChip(
+                        selected = state.themeMode == "system",
+                        onClick = { state.setThemeMode("system") },
+                        label = { Text("跟随系统") },
+                        colors = chipColors
+                    )
+                    FilterChip(
+                        selected = state.themeMode == "light",
+                        onClick = { state.setThemeMode("light") },
+                        label = { Text("浅色") },
+                        colors = chipColors
+                    )
+                    FilterChip(
+                        selected = state.themeMode == "dark",
+                        onClick = { state.setThemeMode("dark") },
+                        label = { Text("深色") },
+                        colors = chipColors
+                    )
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("动态取色", fontSize = 14.sp, color = palette.ink)
+                            Text(
+                                "主色跟随系统壁纸（Android 12 及以上）",
+                                fontSize = 12.sp,
+                                color = palette.muted
+                            )
+                        }
+                        Switch(
+                            checked = state.dynamicColor,
+                            onCheckedChange = { state.setDynamicColor(it) }
+                        )
+                    }
+                }
             }
         }
 
@@ -1438,7 +1572,7 @@ private fun SettingsScreen(state: MailState) {
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            "Hy4email · 业务核心由 Rust 实现",
+            "muse-email · 业务核心由 Rust 实现",
             fontSize = 11.sp,
             color = palette.muted,
             modifier = Modifier.align(Alignment.CenterHorizontally)

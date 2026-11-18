@@ -1,5 +1,6 @@
 package com.ifwqu.domainmail.ui
 
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -13,9 +14,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -106,11 +110,19 @@ val LocalDmPalette = staticCompositionLocalOf { LightPalette }
 fun dm(): DmPalette = LocalDmPalette.current
 
 @Composable
-fun DmTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun DmTheme(
+    dark: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = false,
+    content: @Composable () -> Unit
+) {
     val palette = if (dark) DarkPalette else LightPalette
-    val scheme = if (dark) {
-        darkColorScheme(
+    val context = LocalContext.current
+    // 动态取色只在 Android 12+ 可用；低于 12 即使开了开关也回落到固定配色。
+    val useDynamic = dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val scheme = when {
+        useDynamic && dark -> dynamicDarkColorScheme(context)
+        useDynamic -> dynamicLightColorScheme(context)
+        dark -> darkColorScheme(
             primary = Color(0xFF5B8CFF),
             onPrimary = Color(0xFF0F1117),
             background = palette.appBg,
@@ -119,8 +131,7 @@ fun DmTheme(content: @Composable () -> Unit) {
             onSurface = palette.ink,
             outline = palette.line
         )
-    } else {
-        lightColorScheme(
+        else -> lightColorScheme(
             primary = DmUi.Blue,
             onPrimary = Color.White,
             background = palette.appBg,
@@ -130,7 +141,17 @@ fun DmTheme(content: @Composable () -> Unit) {
             outline = palette.line
         )
     }
-    androidx.compose.runtime.CompositionLocalProvider(LocalDmPalette provides palette) {
+    // 动态取色只换主色：表面、文字、线条仍用自家调色盘，界面结构不走样。
+    val effectivePalette = if (useDynamic) {
+        palette.copy(
+            blue = scheme.primary,
+            blueSoft = scheme.primaryContainer,
+            onBlue = scheme.onPrimary
+        )
+    } else {
+        palette
+    }
+    androidx.compose.runtime.CompositionLocalProvider(LocalDmPalette provides effectivePalette) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }
