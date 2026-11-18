@@ -242,6 +242,18 @@ python tools/github_build.py all                 # push → dispatch → 等结�
 - **版本 0.4.0**：`versionName` 升到 `0.4.0`；打 `v0.4.0` tag 会自动发 Release 并附上 3 个包。
 - **包名改成自己的**：`com.ifwqu.domainmail` → `com.muse.email`（namespace、applicationId、Kotlin 包、JNI 导出函数名 `Java_com_muse_email_RustBridge_nativeCall`、主题名、内部 `Dm*` 前缀全改）。Rust crate 名仍叫 `domainmail-core`，`.so` 仍叫 `libdomainmail_core.so`。**改包名等于新应用**：老包（0.3.0，com.ifwqu.domainmail）要先卸载再装新包，旧包的数据（登录会话、记住的密码、设置）不会迁移。
 
+## Material 3 Expressive 更新（2026-11-18，版本 0.5.0）
+
+- **主题**：`MuseTheme` 由 `MaterialTheme` 换成 `MaterialExpressiveTheme`，动效 `MotionScheme.expressive()`（弹簧方案）；形状与字阶不传参数，直接用 Expressive 的默认值。配色逻辑不变（动态取色只换主色，表面/文字/线条仍用自家调色盘）。
+- **版本链**：Compose BOM `2024.12.01` → `2025.10.01`（material3 **1.4.0** 正式版，含 Expressive；Compose 1.9.4）。Compose 1.9.x 要求 Kotlin 2.2.x，Kotlin 2.2 又要求 Gradle 8.11+：根 `build.gradle.kts` 的 Kotlin 插件 `2.0.21` → `2.2.0`，workflow 的 Gradle `8.9` → `8.11.1`，AGP 仍是 8.7.3。
+- **实验性**：Expressive API 在 material3 1.4.0 仍标 `@ExperimentalMaterial3ExpressiveApi`，`Theme.kt` 的 `MuseTheme` 上加了 opt-in，`Screens.kt` 文件头也加了（`ExperimentalMaterial3Api`、`ExperimentalMaterial3ExpressiveApi` 一起）。
+- **卡片**：`MuseCard` 圆角由 14dp 固定值改成主题的 Expressive large 形状，去掉 1px 边框（Expressive 靠 tonal 表面分层，不靠边框），微阴影保留。
+- **按钮**：登录按钮去掉 12dp 固定圆角（继承主题形状），高度 50dp → 56dp；其余按钮本来就没定形状，直接吃主题。
+- **连体选择器**：设置页「外观」三选一（跟随系统/浅色/深色）和「新邮件通知」三选一（15/30/60 分钟）由 FilterChip 换成 Expressive 的 connected button group（`ToggleButton` + `ButtonGroupDefaults.connected*ButtonShapes()`，选中项大圆角）；颜色仍用自家蓝（`blueSoft`/`blue`），选中逻辑不变。
+- **加载指示**：详情页加载中由 `CircularProgressIndicator` 换成 Expressive 的 `LoadingIndicator`。顶部 busy 条仍是 `LinearProgressIndicator`。
+- **字阶**：顶栏标题 16sp → 18sp，分区小标题 12sp → 13sp；其余字号不变。
+- **版本 0.5.0**：`versionName` 升到 `0.5.0`；包名、签名密钥不变，0.4.0 可直接覆盖安装升级。
+
 ## 已知边界
 
 - 通知是轮询不是推送（服务端 REST 没有推送通道），最短 15 分钟一档；轮询要联网，省电模式下可能延迟。

@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 package com.muse.email.ui
 
 import android.Manifest
@@ -70,16 +70,18 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
@@ -94,6 +96,8 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -121,6 +125,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -438,8 +445,7 @@ private fun LoginScreen(state: MailState) {
             onClick = { state.login(base, email, password, insecure, rememberMe) },
             enabled = !state.busy,
             colors = ButtonDefaults.buttonColors(containerColor = palette.blue),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth().height(50.dp)
+            modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
             Icon(Icons.Default.MailOutline, contentDescription = null)
             Spacer(Modifier.width(8.dp))
@@ -480,10 +486,10 @@ private fun MainScreen(state: MailState) {
                         Column(Modifier.weight(1f)) {
                             Text(
                                 "muse-email",
-                                fontSize = 16.sp,
+                                fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = palette.ink,
-                                lineHeight = 19.sp
+                                lineHeight = 22.sp
                             )
                             // 副标题常驻当前邮箱，行尾箭头提示「可点开切换」
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1053,7 +1059,7 @@ private fun DetailScreen(state: MailState) {
         val detail = state.detail
         if (detail == null) {
             Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = palette.blue)
+                LoadingIndicator(color = palette.blue)
             }
         } else {
             LazyColumn(
@@ -1554,6 +1560,42 @@ private fun MailboxManageScreen(state: MailState) {
 
 // ---------------- 设置 ----------------
 
+/**
+ * 三选一的连体按钮组（Material 3 Expressive 的 connected button group，
+ * 替代已废弃的 SegmentedButton）。选中项用主题大圆角，其余按位置连体。
+ */
+@Composable
+private fun ConnectedChoice(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    val palette = muse()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+    ) {
+        options.forEachIndexed { index, (value, label) ->
+            ToggleButton(
+                checked = selected == value,
+                onCheckedChange = { onSelect(value) },
+                modifier = Modifier.weight(1f).semantics { role = Role.RadioButton },
+                shapes = when (index) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+                colors = ToggleButtonDefaults.toggleButtonColors(
+                    containerColor = palette.cardBg,
+                    contentColor = palette.ink2,
+                    checkedContainerColor = palette.blueSoft,
+                    checkedContentColor = palette.blue
+                )
+            ) { Text(label) }
+        }
+    }
+}
+
 @Composable
 private fun SettingsScreen(state: MailState) {
     val palette = muse()
@@ -1609,35 +1651,11 @@ private fun SettingsScreen(state: MailState) {
         MuseCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 MuseSectionTitle("外观")
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val chipColors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = palette.blueSoft,
-                        selectedLabelColor = palette.blue,
-                        containerColor = palette.cardBg,
-                        labelColor = palette.ink2
-                    )
-                    FilterChip(
-                        selected = state.themeMode == "system",
-                        onClick = { state.updateThemeMode("system") },
-                        label = { Text("跟随系统") },
-                        colors = chipColors
-                    )
-                    FilterChip(
-                        selected = state.themeMode == "light",
-                        onClick = { state.updateThemeMode("light") },
-                        label = { Text("浅色") },
-                        colors = chipColors
-                    )
-                    FilterChip(
-                        selected = state.themeMode == "dark",
-                        onClick = { state.updateThemeMode("dark") },
-                        label = { Text("深色") },
-                        colors = chipColors
-                    )
-                }
+                ConnectedChoice(
+                    options = listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色"),
+                    selected = state.themeMode,
+                    onSelect = { state.updateThemeMode(it) }
+                )
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     Spacer(Modifier.height(12.dp))
                     Row(
@@ -1698,25 +1716,11 @@ private fun SettingsScreen(state: MailState) {
                 }
                 if (state.notifyEnabled) {
                     Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        val chipColors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = palette.blueSoft,
-                            selectedLabelColor = palette.blue,
-                            containerColor = palette.cardBg,
-                            labelColor = palette.ink2
-                        )
-                        listOf(15L to "15 分钟", 30L to "30 分钟", 60L to "60 分钟").forEach { (minutes, label) ->
-                            FilterChip(
-                                selected = state.notifyIntervalMin == minutes,
-                                onClick = { state.updateNotifyInterval(minutes) },
-                                label = { Text(label) },
-                                colors = chipColors
-                            )
-                        }
-                    }
+                    ConnectedChoice(
+                        options = listOf("15" to "15 分钟", "30" to "30 分钟", "60" to "60 分钟"),
+                        selected = state.notifyIntervalMin.toString(),
+                        onSelect = { state.updateNotifyInterval(it.toLong()) }
+                    )
                 }
             }
         }

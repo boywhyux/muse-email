@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -28,12 +31,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 
 /**
  * 设计令牌直接对齐 domainmail/public/style.css 的 :root。
  * 包括亮/暗两套，以及 README 里标注的手机端实测尺寸。
+ * 0.5.0 起走 Material 3 Expressive：主题换成 MaterialExpressiveTheme（形状与动效
+ * 默认就是 Expressive 的），动效用 MotionScheme.expressive() 的弹簧方案。
+ * Expressive API 在 material3 1.4.0 仍是实验性的，这里统一 opt-in。
  */
 object MuseUi {
     val Blue = Color(0xFF2563EB)
@@ -109,6 +114,7 @@ val LocalMusePalette = staticCompositionLocalOf { LightPalette }
 @Composable
 fun muse(): MusePalette = LocalMusePalette.current
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MuseTheme(
     dark: Boolean = isSystemInDarkTheme(),
@@ -152,7 +158,12 @@ fun MuseTheme(
         palette
     }
     androidx.compose.runtime.CompositionLocalProvider(LocalMusePalette provides effectivePalette) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        // shapes / typography 不传：MaterialExpressiveTheme 默认就是 Expressive 的形状与字阶。
+        MaterialExpressiveTheme(
+            colorScheme = scheme,
+            motionScheme = MotionScheme.expressive(),
+            content = content
+        )
     }
 }
 
@@ -179,7 +190,7 @@ fun MuseAvatar(label: String, address: String, size: Dp = 40.dp) {
     }
 }
 
-/** 14px 圆角 + 1px 边框 + 微阴影，对应 Webmail 的主卡片。 */
+/** 大圆角（取主题的 Expressive large 形状）+ 微阴影，不再用 1px 边框分层。 */
 @Composable
 fun MuseCard(
     modifier: Modifier = Modifier,
@@ -189,10 +200,9 @@ fun MuseCard(
     val palette = muse()
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = MaterialTheme.shapes.large,
         color = palette.cardBg,
         contentColor = palette.ink,
-        border = BorderStroke(1.dp, palette.line),
         shadowElevation = 1.dp,
         tonalElevation = 0.dp
     ) {
@@ -224,7 +234,7 @@ fun MuseBadge(count: Int) {
 fun MuseSectionTitle(text: String) {
     Text(
         text,
-        fontSize = 12.sp,
+        fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
         color = muse().muted,
         modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
