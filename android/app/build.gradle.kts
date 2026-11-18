@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "com.muse.email"
-    compileSdk = 35
+    // compileSdk 37：material3 1.5.0-rc01 / Compose 1.12.0 要求至少 37（AAR 元数据校验会拦）。
+    // targetSdk 仍是 35：只升编译版本，不新启用 36/37 的运行时行为。
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.muse.email"
