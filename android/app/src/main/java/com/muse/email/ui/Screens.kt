@@ -1585,7 +1585,7 @@ private fun ConnectedChoice(
                     options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
-                colors = ToggleButtonDefaults.toggleButtonColors(
+                colors = ToggleButtonDefaults.colors(
                     containerColor = palette.cardBg,
                     contentColor = palette.ink2,
                     checkedContainerColor = palette.blueSoft,

@@ -245,8 +245,8 @@ python tools/github_build.py all                 # push → dispatch → 等结�
 ## Material 3 Expressive 更新（2026-11-18，版本 0.5.0）
 
 - **主题**：`MuseTheme` 由 `MaterialTheme` 换成 `MaterialExpressiveTheme`，动效 `MotionScheme.expressive()`（弹簧方案）；形状与字阶不传参数，直接用 Expressive 的默认值。配色逻辑不变（动态取色只换主色，表面/文字/线条仍用自家调色盘）。
-- **版本链**：Compose BOM `2024.12.01` → `2025.10.01`（material3 **1.4.0** 正式版，含 Expressive；Compose 1.9.4）。Compose 1.9.x 要求 Kotlin 2.2.x，Kotlin 2.2 又要求 Gradle 8.11+：根 `build.gradle.kts` 的 Kotlin 插件 `2.0.21` → `2.2.0`，workflow 的 Gradle `8.9` → `8.11.1`，AGP 仍是 8.7.3。
-- **实验性**：Expressive API 在 material3 1.4.0 仍标 `@ExperimentalMaterial3ExpressiveApi`，`Theme.kt` 的 `MuseTheme` 上加了 opt-in，`Screens.kt` 文件头也加了（`ExperimentalMaterial3Api`、`ExperimentalMaterial3ExpressiveApi` 一起）。
+- **版本链**：Compose BOM `2025.10.01`（Compose 1.9.4）。但 BOM 自带的 material3 **1.4.0 正式版里根本没有公开的 Expressive API**——实测 1.4.0 的源码包里没有 `MaterialExpressiveTheme` / `ButtonGroup` / `ToggleButton` / `LoadingIndicator`，`MotionScheme` 还是 `internal`，所以 1.4.0 编不过；公开版在 **1.5.0（当前 rc01）**，material3 单独钉到 `1.5.0-rc01`（显式版本优先于 BOM），它的传递依赖把 Compose 拉到 1.12.0、kotlin-stdlib 拉到 2.2.20。Kotlin 插件因此用 `2.2.20`，workflow 的 Gradle `8.11.1`，AGP 仍是 8.7.3。1.5.0 出正式版后把 material3 改回 BOM 托管。
+- **实验性**：1.5.0-rc01 里主题（`MaterialExpressiveTheme`）、动效（`MotionScheme.expressive()`）、`ButtonGroup` / `ToggleButton` 都已是正式 API，不用 opt-in；只有 `LoadingIndicator` 还标着 `@ExperimentalMaterial3ExpressiveApi`，`Screens.kt` 文件头的 opt-in 就是为它留的。
 - **卡片**：`MuseCard` 圆角由 14dp 固定值改成主题的 Expressive large 形状，去掉 1px 边框（Expressive 靠 tonal 表面分层，不靠边框），微阴影保留。
 - **按钮**：登录按钮去掉 12dp 固定圆角（继承主题形状），高度 50dp → 56dp；其余按钮本来就没定形状，直接吃主题。
 - **连体选择器**：设置页「外观」三选一（跟随系统/浅色/深色）和「新邮件通知」三选一（15/30/60 分钟）由 FilterChip 换成 Expressive 的 connected button group（`ToggleButton` + `ButtonGroupDefaults.connected*ButtonShapes()`，选中项大圆角）；颜色仍用自家蓝（`blueSoft`/`blue`），选中逻辑不变。

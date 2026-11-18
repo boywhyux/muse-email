@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
@@ -38,7 +37,8 @@ import androidx.compose.foundation.clickable
  * 包括亮/暗两套，以及 README 里标注的手机端实测尺寸。
  * 0.5.0 起走 Material 3 Expressive：主题换成 MaterialExpressiveTheme（形状与动效
  * 默认就是 Expressive 的），动效用 MotionScheme.expressive() 的弹簧方案。
- * Expressive API 在 material3 1.4.0 仍是实验性的，这里统一 opt-in。
+ * 注意：material3 1.5.0-rc01 里主题与动效已是正式 API，只有 LoadingIndicator
+ * 还标着 @ExperimentalMaterial3ExpressiveApi（见 Screens.kt 文件头 opt-in）。
  */
 object MuseUi {
     val Blue = Color(0xFF2563EB)
@@ -114,7 +114,6 @@ val LocalMusePalette = staticCompositionLocalOf { LightPalette }
 @Composable
 fun muse(): MusePalette = LocalMusePalette.current
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MuseTheme(
     dark: Boolean = isSystemInDarkTheme(),

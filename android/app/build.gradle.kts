@@ -85,10 +85,14 @@ android {
 }
 
 dependencies {
-    // BOM 2025.10.01 = material3 1.4.0（含 Material 3 Expressive）+ Compose 1.9.4。
-    // Expressive API 在 1.4.0 仍是实验性的，用时要加 @OptIn(ExperimentalMaterial3ExpressiveApi::class)。
-    // 注意：Compose 1.9.x 要求 Kotlin 2.2.x（见根 build.gradle.kts），Kotlin 2.2 又要求 Gradle 8.11+（见 workflow）。
+    // BOM 2025.10.01 = material3 1.4.0 + Compose 1.9.4。但 1.4.0 正式版里根本没有公开的
+    // Expressive API（MotionScheme 是 internal，MaterialExpressiveTheme / ButtonGroup /
+    // ToggleButton / LoadingIndicator 都不在 1.4.0 里），公开版在 1.5.0（当前 rc01）。
+    // 所以 material3 单独钉到 1.5.0-rc01（显式版本优先于 BOM），它的传递依赖会把
+    // Compose 拉到 1.12.0、kotlin-stdlib 拉到 2.2.20；Kotlin 插件因此用 2.2.20，
+    // Gradle 用 8.11.1（见 workflow）。1.5.0 出正式版后把这里改回 BOM 托管。
     implementation(platform("androidx.compose:compose-bom:2025.10.01"))
+    implementation("androidx.compose.material3:material3:1.5.0-rc01")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.ui:ui")
