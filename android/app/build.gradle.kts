@@ -15,8 +15,9 @@ android {
         // 覆盖安装要求 versionCode 严格递增；CI 用 github.run_number 注入。
         versionCode = System.getenv("DM_VERSION_CODE")?.toIntOrNull() ?: 1
         versionName = System.getenv("DM_VERSION_NAME") ?: "0.4.0"
-        // 与 build-apk.yml 里 cargo-ndk 交叉编译的三个 ABI 一致
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        // 注：不要在这里再加 ndk abiFilters——它和下面的 splits abi 冲突，
+        // Gradle 会直接报 "Conflicting configuration"。三个 ABI 已在 splits 里列出，
+        // 与 build-apk.yml 里 cargo-ndk 交叉编译的三个 ABI 一致。
     }
 
     // 按 ABI 分包：三个包各只含一套 .so，手机只下自己那份，比通用包小 2-3 MB。
