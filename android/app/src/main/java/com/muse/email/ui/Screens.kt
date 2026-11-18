@@ -49,6 +49,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -1538,6 +1539,13 @@ private fun LabeledInput(
 
 // ---------------- 邮箱（身份与别名管理） ----------------
 
+/** 随机别名前缀：首位字母 + 7 位字母数字，共 8 位。 */
+private fun randomAliasPrefix(): String {
+    val letters = ('a'..'z').toList()
+    val alnum = letters + ('0'..'9').toList()
+    return (listOf(letters.random()) + (1..7).map { alnum.random() }).joinToString("")
+}
+
 @Composable
 private fun MailboxManageScreen(state: MailState) {
     val palette = muse()
@@ -1559,6 +1567,68 @@ private fun MailboxManageScreen(state: MailState) {
         item {
             Text("邮箱", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = palette.ink)
             Text("管理你的邮箱身份与无限别名", fontSize = 12.sp, color = palette.muted)
+            Spacer(Modifier.height(16.dp))
+        }
+
+        // 新建别名提到最上面：不用滑过所有身份再找；前缀可一键随机生成。
+        item {
+            MuseSectionTitle("新建别名")
+            Spacer(Modifier.height(8.dp))
+            MuseCard(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = prefix,
+                            onValueChange = { prefix = it },
+                            label = { Text("前缀") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedButton(onClick = { prefix = randomAliasPrefix() }) {
+                            Icon(Icons.Default.Casino, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("随机")
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Box {
+                        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.ExpandMore, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(domain.ifBlank { "默认域名" })
+                        }
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("默认域名") },
+                                onClick = { domain = ""; expanded = false }
+                            )
+                            state.aliasDomains.forEach { name ->
+                                DropdownMenuItem(
+                                    text = { Text(name) },
+                                    onClick = { domain = name; expanded = false }
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            if (prefix.isNotBlank()) {
+                                state.createAlias(prefix, domain)
+                                prefix = ""
+                            }
+                        },
+                        enabled = state.aliasAllowCreate && !state.busy,
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.blue),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("创建别名") }
+                    if (!state.aliasAllowCreate) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("管理员已关闭自助创建别名", color = palette.muted, fontSize = 12.sp)
+                    }
+                }
+            }
             Spacer(Modifier.height(16.dp))
         }
 
@@ -1609,57 +1679,6 @@ private fun MailboxManageScreen(state: MailState) {
 
         item {
             Spacer(Modifier.height(20.dp))
-            MuseSectionTitle("无限别名")
-            Spacer(Modifier.height(8.dp))
-            MuseCard(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    MuseSectionTitle("新建别名")
-                    OutlinedTextField(
-                        value = prefix,
-                        onValueChange = { prefix = it },
-                        label = { Text("前缀") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Box {
-                        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.ExpandMore, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(domain.ifBlank { "默认域名" })
-                        }
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text("默认域名") },
-                                onClick = { domain = ""; expanded = false }
-                            )
-                            state.aliasDomains.forEach { name ->
-                                DropdownMenuItem(
-                                    text = { Text(name) },
-                                    onClick = { domain = name; expanded = false }
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            if (prefix.isNotBlank()) {
-                                state.createAlias(prefix, domain)
-                                prefix = ""
-                            }
-                        },
-                        enabled = state.aliasAllowCreate && !state.busy,
-                        colors = ButtonDefaults.buttonColors(containerColor = palette.blue),
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("创建别名") }
-                    if (!state.aliasAllowCreate) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("管理员已关闭自助创建别名", color = palette.muted, fontSize = 12.sp)
-                    }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
             MuseSectionTitle("已有 ${state.aliases.size} 个别名")
             Spacer(Modifier.height(8.dp))
         }
