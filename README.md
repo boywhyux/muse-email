@@ -245,7 +245,7 @@ python tools/github_build.py all                 # push → dispatch → 等结�
 ## Material 3 Expressive 更新（2026-11-18，版本 0.5.0）
 
 - **主题**：`MuseTheme` 由 `MaterialTheme` 换成 `MaterialExpressiveTheme`，动效 `MotionScheme.expressive()`（弹簧方案）；形状与字阶不传参数，直接用 Expressive 的默认值。配色逻辑不变（动态取色只换主色，表面/文字/线条仍用自家调色盘）。
-- **版本链**：Compose BOM `2025.10.01`（Compose 1.9.4）。但 BOM 自带的 material3 **1.4.0 正式版里根本没有公开的 Expressive API**——实测 1.4.0 的源码包里没有 `MaterialExpressiveTheme` / `ButtonGroup` / `ToggleButton` / `LoadingIndicator`，`MotionScheme` 还是 `internal`，所以 1.4.0 编不过；公开版在 **1.5.0（当前 rc01）**，material3 单独钉到 `1.5.0-rc01`（显式版本优先于 BOM），它的传递依赖把 Compose 拉到 1.12.0、kotlin-stdlib 拉到 2.2.20。1.5.0-rc01 还要求 **compileSdk 37+ 和 AGP 9.1.0+**（AAR 元数据校验会拦）：AGP `8.7.3` → `9.1.0`；AGP 9.1.0 又要求 **Gradle 最低 9.3.1**（9.1.0 不够，实测报错），所以 workflow 用 Gradle `9.3.1`；workflow 装的平台和 build-tools 是 android-36 / 37.0.0。但 **Google 的 SDK 仓库里至今没有 `platforms;android-37`**（2026-11-18 查 `repository2-1.xml`，平台最新只有 36；连 beta02 的元数据也要求 37，换 beta 没用），所以 `compileSdk` 只能用 36，并把 `checkDebugAarMetadata` / `checkReleaseAarMetadata` 两项任务关掉（只是守门检查，库编译期用到的 framework 符号在 36 以内）。等 android-37 平台上架后，删掉这两行、compileSdk 改 37。Kotlin 插件用 `2.2.20`。1.5.0 出正式版后把 material3 改回 BOM 托管。
+- **版本链**：Compose BOM `2026.08.00`（Compose 1.12.0；0.5.1 起用它，之前是 `2025.10.01`）。但 BOM 自带的 material3 **1.4.0 正式版里根本没有公开的 Expressive API**——实测 1.4.0 的源码包里没有 `MaterialExpressiveTheme` / `ButtonGroup` / `ToggleButton` / `LoadingIndicator`，`MotionScheme` 还是 `internal`，所以 1.4.0 编不过；公开版在 **1.5.0（当前 rc01）**，material3 单独钉到 `1.5.0-rc01`（显式版本优先于 BOM），它的传递依赖把 Compose 拉到 1.12.0、kotlin-stdlib 拉到 2.2.20。1.5.0-rc01 还要求 **compileSdk 37+ 和 AGP 9.1.0+**（AAR 元数据校验会拦）：AGP `8.7.3` → `9.1.0`；AGP 9.1.0 又要求 **Gradle 最低 9.3.1**（9.1.0 不够，实测报错），所以 workflow 用 Gradle `9.3.1`；workflow 装的平台和 build-tools 是 android-36 / 37.0.0。但 **Google 的 SDK 仓库里至今没有 `platforms;android-37`**（2026-11-18 查 `repository2-1.xml`，平台最新只有 36；连 beta02 的元数据也要求 37，换 beta 没用），所以 `compileSdk` 只能用 36，并把 `checkDebugAarMetadata` / `checkReleaseAarMetadata` 两项任务关掉（只是守门检查，库编译期用到的 framework 符号在 36 以内）。等 android-37 平台上架后，删掉这两行、compileSdk 改 37。Kotlin 插件用 `2.2.20`。1.5.0 出正式版后把 material3 改回 BOM 托管。
 - **实验性**：1.5.0-rc01 里主题（`MaterialExpressiveTheme`）、动效（`MotionScheme.expressive()`）、`ButtonGroup` / `ToggleButton` 都已是正式 API，不用 opt-in；只有 `LoadingIndicator` 还标着 `@ExperimentalMaterial3ExpressiveApi`，`Screens.kt` 文件头的 opt-in 就是为它留的。
 - **卡片**：`MuseCard` 圆角由 14dp 固定值改成主题的 Expressive large 形状，去掉 1px 边框（Expressive 靠 tonal 表面分层，不靠边框），微阴影保留。
 - **按钮**：登录按钮去掉 12dp 固定圆角（继承主题形状），高度 50dp → 56dp；其余按钮本来就没定形状，直接吃主题。
@@ -253,6 +253,7 @@ python tools/github_build.py all                 # push → dispatch → 等结�
 - **加载指示**：详情页加载中由 `CircularProgressIndicator` 换成 Expressive 的 `LoadingIndicator`。顶部 busy 条仍是 `LinearProgressIndicator`。
 - **字阶**：顶栏标题 16sp → 18sp，分区小标题 12sp → 13sp；其余字号不变。
 - **版本 0.5.0**：`versionName` 升到 `0.5.0`；包名、签名密钥不变，0.4.0 可直接覆盖安装升级。
+- **版本 0.5.1（闪退修复，2026-11-18）**：0.5.0 在红米 Note 10 5G（Android 13）上点开就闪退，0.4.0 正常。主题代码本身是纯 Kotlin、登录页也不用扩展图标，最大嫌疑是 AGP 9.1.0 的 R8 激进优化 + 新旧 Compose 伴生库混搭。修法：proguard 加 `-dontoptimize`（AGP 9 里 `android.enableR8.fullMode=false` 已废弃，这是官方认可的等价办法，只关优化、保留裁剪和混淆）；BOM 换到 `2026.08.00`，让整套 Compose 对齐 1.12.0。包名、签名不变，0.5.0 可直接覆盖安装。
 
 ## 已知边界
 

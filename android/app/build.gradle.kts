@@ -17,7 +17,7 @@ android {
         targetSdk = 35
         // 覆盖安装要求 versionCode 严格递增；CI 用 github.run_number 注入。
         versionCode = System.getenv("DM_VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = System.getenv("DM_VERSION_NAME") ?: "0.5.0"
+        versionName = System.getenv("DM_VERSION_NAME") ?: "0.5.1"
         // 注：不要在这里再加 ndk abiFilters——它和下面的 splits abi 冲突，
         // Gradle 会直接报 "Conflicting configuration"。三个 ABI 已在 splits 里列出，
         // 与 build-apk.yml 里 cargo-ndk 交叉编译的三个 ABI 一致。
@@ -105,13 +105,16 @@ tasks.configureEach {
 }
 
 dependencies {
-    // BOM 2025.10.01 = material3 1.4.0 + Compose 1.9.4。但 1.4.0 正式版里根本没有公开的
+    // BOM 2026.08.00 = material3 1.4.0 + Compose 1.12.0。0.5.0 用旧 BOM 时，
+    // material3 1.5.0-rc01 把 Compose 拉到 1.12.0，但图标等伴生库还停在 1.9.4 时代，
+    // 版本混搭是闪退嫌疑之一；换成 1.12.0 时代的 BOM 让整套 Compose 对齐。
+    // 但 1.4.0 正式版里根本没有公开的
     // Expressive API（MotionScheme 是 internal，MaterialExpressiveTheme / ButtonGroup /
     // ToggleButton / LoadingIndicator 都不在 1.4.0 里），公开版在 1.5.0（当前 rc01）。
     // 所以 material3 单独钉到 1.5.0-rc01（显式版本优先于 BOM），它的传递依赖会把
     // Compose 拉到 1.12.0、kotlin-stdlib 拉到 2.2.20；Kotlin 由 AGP 9.1.0 内置，
     // Gradle 用 9.3.1（见 workflow）。1.5.0 出正式版后把这里改回 BOM 托管。
-    implementation(platform("androidx.compose:compose-bom:2025.10.01"))
+    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     implementation("androidx.compose.material3:material3:1.5.0-rc01")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.3")

@@ -11,3 +11,9 @@
 # 不放行 Tink 自身，Tink 缺类仍会正常报错。
 -dontwarn com.google.errorprone.annotations.**
 -dontwarn javax.annotation.**
+
+# 0.5.0 在红米 Note 10 5G（Android 13）上点开就闪退，0.4.0 正常；最大嫌疑是
+# AGP 9.1.0 的 R8 激进优化（full mode 在 AGP 9 里关不掉了，旧属性
+# android.enableR8.fullMode=false 已废弃，官方认可的等价办法就是 -dontoptimize）。
+# 先关优化、只保留裁剪和混淆，等抓到真凶再决定要不要重新打开。
+-dontoptimize
