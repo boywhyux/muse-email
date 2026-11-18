@@ -28,9 +28,7 @@ android {
     // AAR 元数据校验关掉：material3 1.5.0-rc01 / Compose 1.12.0 要求 minCompileSdk 37，
     // 但 SDK 仓库里没有 android-37 平台（见上面 compileSdk 注释），校验必挂；
     // 这只是守门检查——库编译期用到的 framework 符号都在 36 以内（编得过就证明静态引用
-    // 不依赖 37），关掉后用 36 编译即可。等 android-37 平台上架后删掉这两行、compileSdk 改 37。
-    tasks.named("checkDebugAarMetadata") { enabled = false }
-    tasks.named("checkReleaseAarMetadata") { enabled = false }
+    // 不依赖 37），关掉后用 36 编译即可。等 android-37 平台上架后删掉下面那段、compileSdk 改 37。
 
     splits {
         abi {
@@ -96,6 +94,14 @@ android {
 // AGP 9 内置 Kotlin 后 kotlinOptions 已不存在，改用顶层的 jvmToolchain 指定 Kotlin 的 JDK。
 kotlin {
     jvmToolchain(17)
+}
+
+// 关掉 AAR 元数据校验（见 android 块里的注释）：tasks.named 在配置期找不到这两个任务
+//（AGP 9 是惰性创建的），改用 configureEach 按名匹配，后创建的任务也能拦住。
+tasks.configureEach {
+    if (name == "checkDebugAarMetadata" || name == "checkReleaseAarMetadata") {
+        enabled = false
+    }
 }
 
 dependencies {
