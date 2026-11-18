@@ -1,4 +1,4 @@
-package com.ifwqu.domainmail
+package com.muse.email
 
 import android.content.Context
 import androidx.compose.runtime.getValue
@@ -14,6 +14,7 @@ sealed class Screen {
     object List : Screen()
     data class Detail(val id: Long) : Screen()
     object Compose : Screen()
+    object Admin : Screen()
 }
 
 private const val PAGE_SIZE = 30
@@ -22,7 +23,7 @@ private const val PAGE_SIZE = 30
 class MailState(private val context: Context, private val scope: CoroutineScope) {
     val appContext: Context get() = context.applicationContext
 
-    private val prefs = context.getSharedPreferences("domainmail", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("muse-email", Context.MODE_PRIVATE)
     private val credentialsStore = CredentialsStore(context)
 
     var screen: Screen by mutableStateOf(Screen.Login)
@@ -39,6 +40,24 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
     var themeMode by mutableStateOf(prefs.getString("themeMode", "system") ?: "system")
     var dynamicColor by mutableStateOf(prefs.getBoolean("dynamicColor", false))
     var refreshing by mutableStateOf(false)
+
+    // 通知：开着就每隔 notifyIntervalMin 分钟由 WorkManager 轮询一次未读。
+    var notifyEnabled by mutableStateOf(prefs.getBoolean("notifyEnabled", false))
+    var notifyIntervalMin by mutableStateOf(prefs.getLong("notifyIntervalMin", 15L))
+
+    // 指纹锁：只拦“冷启动恢复会话”；密码登录成功后直接放行，不重复验证。
+    var biometricLock by mutableStateOf(prefs.getBoolean("biometricLock", false))
+    var unlocked by mutableStateOf(!prefs.getBoolean("biometricLock", false))
+
+    // 管理后台：仅管理员账号可见，打开管理页时加载。
+    var adminStats by mutableStateOf(JSONObject())
+    var adminDomains by mutableStateOf<List<JSONObject>>(emptyList())
+    var adminUsers by mutableStateOf<List<JSONObject>>(emptyList())
+    var adminAliases by mutableStateOf<List<JSONObject>>(emptyList())
+    var adminOutbox by mutableStateOf<List<JSONObject>>(emptyList())
+    var adminAudit by mutableStateOf<List<JSONObject>>(emptyList())
+    var adminConfig by mutableStateOf(JSONObject())
+    var adminLoaded by mutableStateOf(false)
 
     var folders: List<Folder> by mutableStateOf(emptyList())
     var mailboxes: List<Mailbox> by mutableStateOf(emptyList())
@@ -130,6 +149,7 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
         currentMailbox = user?.email
         tab = 0
         screen = Screen.List
+        unlocked = true // 密码刚验过，不再弹指纹锁
         refreshAll()
     }
 
@@ -176,6 +196,12 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
         val page = result.optJSONArray("messages").objects().map { MessageSummary.from(it) }
         messages = if (offset == 0) page else messages + page
         total = result.int("total")
+        // 记下收件箱里见过的最大 id，后台轮询只对更新的未读发通知，不重复打扰。
+        if (currentFolder == "INBOX" && page.isNotEmpty()) {
+            val maxId = page.maxOf { it.id }
+            val stored = prefs.getLong("lastNotifiedId", 0L)
+            if (maxId > stored) prefs.edit().putLong("lastNotifiedId", maxId).apply()
+        }
     }
 
     fun setFolder(folder: String) = go {
@@ -276,6 +302,7 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
             put("attachments", attachments)
         }
         RustBridge.call("send", payload)
+        clearDraft()
         toast = "已提交发送"
         screen = Screen.List
         loadMessages(0)
@@ -348,13 +375,88 @@ class MailState(private val context: Context, private val scope: CoroutineScope)
         toast = null
     }
 
-    fun setThemeMode(mode: String) {
+    fun updateThemeMode(mode: String) {
         themeMode = mode
         prefs.edit().putString("themeMode", mode).apply()
     }
 
-    fun setDynamicColor(enabled: Boolean) {
+    fun updateDynamicColor(enabled: Boolean) {
         dynamicColor = enabled
         prefs.edit().putBoolean("dynamicColor", enabled).apply()
+    }
+
+    fun updateNotifyEnabled(enabled: Boolean) {
+        notifyEnabled = enabled
+        prefs.edit().putBoolean("notifyEnabled", enabled).apply()
+        if (enabled) scheduleMailCheck(appContext, notifyIntervalMin) else cancelMailCheck(appContext)
+    }
+
+    fun updateNotifyInterval(minutes: Long) {
+        notifyIntervalMin = minutes
+        prefs.edit().putLong("notifyIntervalMin", minutes).apply()
+        if (notifyEnabled) scheduleMailCheck(appContext, minutes)
+    }
+
+    fun unlock() {
+        unlocked = true
+    }
+
+    fun updateBiometricLock(enabled: Boolean) {
+        biometricLock = enabled
+        if (!enabled) unlocked = true
+        prefs.edit().putBoolean("biometricLock", enabled).apply()
+    }
+
+    // 草稿只存文本字段（附件不进草稿，恢复后需重新添加）；服务端没有存草稿接口。
+    fun loadDraft(): JSONObject? {
+        val raw = prefs.getString("draftJson", "") ?: ""
+        if (raw.isBlank()) return null
+        return try {
+            JSONObject(raw)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun saveDraft(from: String, to: String, cc: String, subject: String, body: String) {
+        if (listOf(to, cc, subject, body).none { it.isNotBlank() }) {
+            prefs.edit().remove("draftJson").apply()
+            return
+        }
+        val json = JSONObject().apply {
+            put("from", from)
+            put("to", to)
+            put("cc", cc)
+            put("subject", subject)
+            put("body", body)
+        }
+        prefs.edit().putString("draftJson", json.toString()).apply()
+    }
+
+    fun clearDraft() {
+        prefs.edit().remove("draftJson").apply()
+    }
+
+    fun loadAdmin() = go {
+        adminStats = RustBridge.call("adminStats")
+        adminDomains = RustBridge.call("adminDomains").optJSONArray("domains").objects()
+        adminUsers = RustBridge.call("adminUsers").optJSONArray("users").objects()
+        adminAliases = RustBridge.call("adminAliases").optJSONArray("aliases").objects()
+        adminOutbox = RustBridge.call("adminOutbox").optJSONArray("queue").objects()
+        adminAudit = RustBridge.call("adminAudit").optJSONArray("audit").objects()
+        adminConfig = RustBridge.call("adminConfig")
+        adminLoaded = true
+    }
+
+    fun adminRetryOutbox(id: Long) = go {
+        RustBridge.call("adminRetryOutbox", JSONObject().put("id", id))
+        toast = "已重新排队"
+        loadAdmin()
+    }
+
+    fun adminDeleteOutbox(id: Long) = go {
+        RustBridge.call("adminDeleteOutbox", JSONObject().put("id", id))
+        toast = "已删除"
+        loadAdmin()
     }
 }

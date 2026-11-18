@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "DomainMail"
+rootProject.name = "muse-email"
 include(":app")

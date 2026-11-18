@@ -1,4 +1,4 @@
-package com.ifwqu.domainmail
+package com.muse.email
 
 import org.json.JSONArray
 import org.json.JSONObject

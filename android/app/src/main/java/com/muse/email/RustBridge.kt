@@ -1,10 +1,10 @@
-package com.ifwqu.domainmail
+package com.muse.email
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-class DmException(val kind: String, message: String) : Exception(message)
+class MuseException(val kind: String, message: String) : Exception(message)
 
 /**
  * 与 Rust 核心的唯一通道。整个 App 只有一个 native 方法：
@@ -17,7 +17,7 @@ object RustBridge {
     }
 
     // @JvmStatic 让 JVM 看到的是 static native 方法，JNI 第二个参数是 jclass，
-    // 与 Rust 侧 Java_com_ifwqu_domainmail_RustBridge_nativeCall(JNIEnv, JClass, ...) 对齐。
+    // 与 Rust 侧 Java_com_muse_email_RustBridge_nativeCall(JNIEnv, JClass, ...) 对齐。
     @JvmStatic
     external fun nativeCall(method: String, payload: String): String
 
@@ -25,13 +25,13 @@ object RustBridge {
         val root = try {
             JSONObject(raw)
         } catch (e: Exception) {
-            throw DmException("other", "Rust 返回了非法 JSON: ${e.message}")
+            throw MuseException("other", "Rust 返回了非法 JSON: ${e.message}")
         }
         if (root.optBoolean("ok", false)) {
             return root.optJSONObject("data") ?: JSONObject()
         }
         val error = root.optJSONObject("error") ?: JSONObject()
-        throw DmException(
+        throw MuseException(
             error.optString("kind", "unknown"),
             error.optString("message", "未知错误")
         )

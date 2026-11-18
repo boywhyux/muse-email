@@ -1,4 +1,4 @@
-package com.ifwqu.domainmail
+package com.muse.email
 
 import android.content.Context
 import android.content.SharedPreferences

@@ -1,4 +1,4 @@
-package com.ifwqu.domainmail.ui
+package com.muse.email.ui
 
 import android.os.Build
 import androidx.compose.foundation.background
@@ -35,7 +35,7 @@ import androidx.compose.foundation.clickable
  * 设计令牌直接对齐 domainmail/public/style.css 的 :root。
  * 包括亮/暗两套，以及 README 里标注的手机端实测尺寸。
  */
-object DmUi {
+object MuseUi {
     val Blue = Color(0xFF2563EB)
     val BlueDark = Color(0xFF1D4ED8)
     val BlueSoft = Color(0xFFEDF4FF)
@@ -53,7 +53,7 @@ object DmUi {
         AvatarColors[abs(key.hashCode() % AvatarColors.size)]
 }
 
-data class DmPalette(
+data class MusePalette(
     val appBg: Color,
     val cardBg: Color,
     val ink: Color,
@@ -70,7 +70,7 @@ data class DmPalette(
     val danger: Color
 )
 
-private val LightPalette = DmPalette(
+private val LightPalette = MusePalette(
     appBg = Color(0xFFF4F6F9),
     cardBg = Color(0xFFFFFFFF),
     ink = Color(0xFF202938),
@@ -79,15 +79,15 @@ private val LightPalette = DmPalette(
     muted2 = Color(0xFF7A8494),
     line = Color(0xFFE4E9F0),
     lineLight = Color(0xFFEDF0F4),
-    blue = DmUi.Blue,
-    blueSoft = DmUi.BlueSoft,
+    blue = MuseUi.Blue,
+    blueSoft = MuseUi.BlueSoft,
     onBlue = Color.White,
     avatarFg = Color(0xFF6B92E0),
-    star = DmUi.Star,
-    danger = DmUi.Danger
+    star = MuseUi.Star,
+    danger = MuseUi.Danger
 )
 
-private val DarkPalette = DmPalette(
+private val DarkPalette = MusePalette(
     appBg = Color(0xFF0F1117),
     cardBg = Color(0xFF161922),
     ink = Color(0xFFE7E9EE),
@@ -104,13 +104,13 @@ private val DarkPalette = DmPalette(
     danger = Color(0xFFE5484D)
 )
 
-val LocalDmPalette = staticCompositionLocalOf { LightPalette }
+val LocalMusePalette = staticCompositionLocalOf { LightPalette }
 
 @Composable
-fun dm(): DmPalette = LocalDmPalette.current
+fun muse(): MusePalette = LocalMusePalette.current
 
 @Composable
-fun DmTheme(
+fun MuseTheme(
     dark: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
@@ -132,7 +132,7 @@ fun DmTheme(
             outline = palette.line
         )
         else -> lightColorScheme(
-            primary = DmUi.Blue,
+            primary = MuseUi.Blue,
             onPrimary = Color.White,
             background = palette.appBg,
             surface = palette.cardBg,
@@ -151,7 +151,7 @@ fun DmTheme(
     } else {
         palette
     }
-    androidx.compose.runtime.CompositionLocalProvider(LocalDmPalette provides effectivePalette) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalMusePalette provides effectivePalette) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }
@@ -163,11 +163,11 @@ private fun initialOf(label: String, address: String): String {
 }
 
 @Composable
-fun DmAvatar(label: String, address: String, size: Dp = 40.dp) {
+fun MuseAvatar(label: String, address: String, size: Dp = 40.dp) {
     Box(
         modifier = Modifier
             .size(size)
-            .background(DmUi.avatarColor(address.ifBlank { label }), CircleShape),
+            .background(MuseUi.avatarColor(address.ifBlank { label }), CircleShape),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -181,12 +181,12 @@ fun DmAvatar(label: String, address: String, size: Dp = 40.dp) {
 
 /** 14px 圆角 + 1px 边框 + 微阴影，对应 Webmail 的主卡片。 */
 @Composable
-fun DmCard(
+fun MuseCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val palette = dm()
+    val palette = muse()
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(14.dp),
@@ -203,9 +203,9 @@ fun DmCard(
 }
 
 @Composable
-fun DmBadge(count: Int) {
+fun MuseBadge(count: Int) {
     if (count <= 0) return
-    val palette = dm()
+    val palette = muse()
     Box(
         modifier = Modifier
             .background(palette.blue, RoundedCornerShape(10.dp))
@@ -221,12 +221,12 @@ fun DmBadge(count: Int) {
 }
 
 @Composable
-fun DmSectionTitle(text: String) {
+fun MuseSectionTitle(text: String) {
     Text(
         text,
         fontSize = 12.sp,
         fontWeight = FontWeight.SemiBold,
-        color = dm().muted,
+        color = muse().muted,
         modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
     )
 }

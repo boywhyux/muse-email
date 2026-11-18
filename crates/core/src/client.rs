@@ -17,13 +17,13 @@ pub struct ClientConfig {
 
 /// 与 DomainMail Web 服务（默认 :8080）对话的 HTTP 客户端。
 /// Cookie 会话手动管理：登录响应里取 dm_session，之后每个请求带回。
-pub struct DmClient {
+pub struct MuseClient {
     http: Client,
     base_url: String,
     session: Session,
 }
 
-impl DmClient {
+impl MuseClient {
     pub fn new(cfg: ClientConfig) -> Result<Self> {
         let base_url = cfg.base_url.trim().trim_end_matches('/').to_string();
         if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {

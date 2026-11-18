@@ -1,16 +1,24 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
-package com.ifwqu.domainmail.ui
+package com.muse.email.ui
 
+import android.Manifest
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -117,23 +125,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
-import com.ifwqu.domainmail.Alias
-import com.ifwqu.domainmail.R
-import com.ifwqu.domainmail.MailState
-import com.ifwqu.domainmail.Mailbox
-import com.ifwqu.domainmail.MessageSummary
-import com.ifwqu.domainmail.PickedFile
-import com.ifwqu.domainmail.Screen
-import com.ifwqu.domainmail.folderLabel
-import com.ifwqu.domainmail.formatDate
-import com.ifwqu.domainmail.formatDateFull
-import com.ifwqu.domainmail.long
-import com.ifwqu.domainmail.obj
-import com.ifwqu.domainmail.str
+import androidx.fragment.app.FragmentActivity
+import com.muse.email.Alias
+import com.muse.email.R
+import com.muse.email.MailState
+import com.muse.email.Mailbox
+import com.muse.email.MessageSummary
+import com.muse.email.PickedFile
+import com.muse.email.Screen
+import com.muse.email.folderLabel
+import com.muse.email.formatDate
+import com.muse.email.formatDateFull
+import com.muse.email.long
+import com.muse.email.obj
+import com.muse.email.str
 import java.io.File
+import java.io.FileInputStream
 
 @Composable
-fun DomainMailApp() {
+fun MuseEmailApp() {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val state = remember { MailState(context, scope) }
@@ -144,15 +154,21 @@ fun DomainMailApp() {
         "dark" -> true
         else -> isSystemInDarkTheme()
     }
-    DmTheme(dark = dark, dynamicColor = state.dynamicColor) {
-        val palette = dm()
+    MuseTheme(dark = dark, dynamicColor = state.dynamicColor) {
+        val palette = muse()
         Surface(modifier = Modifier.fillMaxSize(), color = palette.appBg) {
             Box(Modifier.fillMaxSize()) {
-                when (state.screen) {
-                    is Screen.Login -> LoginScreen(state)
-                    is Screen.Detail -> DetailScreen(state)
-                    is Screen.Compose -> ComposeScreen(state)
-                    is Screen.List -> MainScreen(state)
+                // 指纹锁只拦冷启动恢复会话；登录页本身不拦（密码刚验过也不拦）。
+                if (state.screen !is Screen.Login && !state.unlocked) {
+                    LockScreen(state)
+                } else {
+                    when (state.screen) {
+                        is Screen.Login -> LoginScreen(state)
+                        is Screen.Detail -> DetailScreen(state)
+                        is Screen.Compose -> ComposeScreen(state)
+                        is Screen.Admin -> AdminScreen(state)
+                        is Screen.List -> MainScreen(state)
+                    }
                 }
 
                 if (state.busy) {
@@ -184,6 +200,103 @@ fun DomainMailApp() {
     }
 }
 
+// ---------------- 指纹锁 ----------------
+
+/** 锁屏用的验证方式：Android 12+ 允许指纹/面容或锁屏密码二选一；以下版本只认强生物识别。 */
+private fun lockAuthenticators(): Int =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    } else {
+        BiometricManager.Authenticators.BIOMETRIC_STRONG
+    }
+
+@Composable
+private fun LockScreen(state: MailState) {
+    val palette = muse()
+    val activity = LocalContext.current as? FragmentActivity
+    var errorText by remember { mutableStateOf<String?>(null) }
+    var showClearDialog by remember { mutableStateOf(false) }
+
+    fun authenticate() {
+        val act = activity ?: return
+        val prompt = BiometricPrompt(
+            act,
+            ContextCompat.getMainExecutor(act),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    state.unlock()
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    if (errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                        errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON
+                    ) {
+                        errorText = errString.toString()
+                    }
+                }
+            }
+        )
+        val infoBuilder = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("验证后继续")
+            .setSubtitle("使用指纹、面容或锁屏密码解锁 muse-email")
+            .setAllowedAuthenticators(lockAuthenticators())
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            infoBuilder.setNegativeButtonText("取消")
+        }
+        prompt.authenticate(infoBuilder.build())
+    }
+
+    LaunchedEffect(Unit) { authenticate() }
+
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text("清除登录状态？", color = palette.ink) },
+            text = { Text("将清除本机保存的登录会话，需要重新输入密码登录；指纹锁也会一并关闭。", color = palette.ink2) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearDialog = false
+                    state.updateBiometricLock(false)
+                    state.logout()
+                }) { Text("清除并重新登录", color = palette.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) { Text("取消", color = palette.blue) }
+            }
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(palette.appBg)
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        BrandMark(size = 64)
+        Spacer(Modifier.height(20.dp))
+        Text("muse-email 已锁定", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = palette.ink)
+        Spacer(Modifier.height(8.dp))
+        Text("验证后继续查看邮件", fontSize = 13.sp, color = palette.muted)
+        errorText?.let {
+            Spacer(Modifier.height(12.dp))
+            Text(it, fontSize = 13.sp, color = palette.danger)
+        }
+        Spacer(Modifier.height(24.dp))
+        Button(
+            onClick = { authenticate() },
+            colors = ButtonDefaults.buttonColors(containerColor = palette.blue),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("验证") }
+        Spacer(Modifier.height(12.dp))
+        TextButton(onClick = { showClearDialog = true }) {
+            Text("清除登录状态并重新登录", color = palette.muted)
+        }
+    }
+}
+
 // ---------------- 品牌头 ----------------
 
 /**
@@ -208,7 +321,7 @@ private fun BrandMark(size: Int = 34) {
  */
 @Composable
 private fun CopyAddressButton(address: String, label: String = "已复制邮箱地址") {
-    val palette = dm()
+    val palette = muse()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     IconButton(
@@ -232,7 +345,7 @@ private fun CopyAddressButton(address: String, label: String = "已复制邮箱�
 
 @Composable
 private fun LoginScreen(state: MailState) {
-    val palette = dm()
+    val palette = muse()
     val saved = state.savedCredentials
     var base by remember { mutableStateOf(saved?.baseUrl?.ifBlank { "https://" } ?: state.savedBaseUrl.ifBlank { "https://" }) }
     var email by remember { mutableStateOf(saved?.email ?: "") }
@@ -269,9 +382,9 @@ private fun LoginScreen(state: MailState) {
         Text("你的自建域名邮箱", fontSize = 13.sp, color = palette.muted)
         Spacer(Modifier.height(28.dp))
 
-        DmCard(modifier = Modifier.fillMaxWidth()) {
+        MuseCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(18.dp)) {
-                DmSectionTitle("服务器")
+                MuseSectionTitle("服务器")
                 OutlinedTextField(
                     value = base,
                     onValueChange = { base = it },
@@ -282,7 +395,7 @@ private fun LoginScreen(state: MailState) {
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(14.dp))
-                DmSectionTitle("账号")
+                MuseSectionTitle("账号")
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
@@ -341,7 +454,7 @@ private fun LoginScreen(state: MailState) {
 
 @Composable
 private fun MainScreen(state: MailState) {
-    val palette = dm()
+    val palette = muse()
     var showMailboxSheet by remember { mutableStateOf(false) }
 
     // 在别名 / 设置页按返回，先回邮件页，不直接退出 App
@@ -412,28 +525,28 @@ private fun MainScreen(state: MailState) {
             // 四格完全同构：单色线性图标 + 两字名词 label + 同一套选中态。
             // 与 domainmail/public 移动端规范一致：邮件 / 写信 / 邮箱 / 设置。
             NavigationBar(containerColor = palette.cardBg, tonalElevation = 0.dp) {
-                DmNavItem(
+                MuseNavItem(
                     selected = state.tab == 0,
                     onClick = { state.tab = 0 },
                     icon = Icons.Default.Inbox,
                     label = "邮件",
                     palette = palette
                 )
-                DmNavItem(
+                MuseNavItem(
                     selected = false,
                     onClick = { state.openCompose() },
                     icon = Icons.Default.Edit,
                     label = "写信",
                     palette = palette
                 )
-                DmNavItem(
+                MuseNavItem(
                     selected = state.tab == 1,
                     onClick = { state.tab = 1 },
                     icon = Icons.Default.MailOutline,
                     label = "邮箱",
                     palette = palette
                 )
-                DmNavItem(
+                MuseNavItem(
                     selected = state.tab == 2,
                     onClick = { state.tab = 2 },
                     icon = Icons.Default.Settings,
@@ -462,12 +575,12 @@ private fun MainScreen(state: MailState) {
  * 必须是 RowScope 扩展——Material3 的 NavigationBarItem 只在 RowScope 上下文可用。
  */
 @Composable
-private fun RowScope.DmNavItem(
+private fun RowScope.MuseNavItem(
     selected: Boolean,
     onClick: () -> Unit,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
-    palette: DmPalette
+    palette: MusePalette
 ) {
     NavigationBarItem(
         selected = selected,
@@ -495,7 +608,7 @@ private fun RowScope.DmNavItem(
 
 @Composable
 private fun MailListScreen(state: MailState) {
-    val palette = dm()
+    val palette = muse()
     val pullState = rememberPullToRefreshState()
 
     PullToRefreshBox(
@@ -542,7 +655,7 @@ private fun MailListScreen(state: MailState) {
 /** 底部弹层：邮箱列表完整铺开、可滚动，长地址不再被 DropdownMenu 裁掉。 */
 @Composable
 private fun MailboxSheet(state: MailState, onDismiss: () -> Unit) {
-    val palette = dm()
+    val palette = muse()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -604,7 +717,7 @@ private fun MailboxSheet(state: MailState, onDismiss: () -> Unit) {
 
 @Composable
 private fun MailboxSheetRow(state: MailState, mailbox: Mailbox, onDismiss: () -> Unit) {
-    val palette = dm()
+    val palette = muse()
     val selected = mailbox.address == (state.currentMailbox ?: state.user?.email)
     Row(
         modifier = Modifier
@@ -617,7 +730,7 @@ private fun MailboxSheetRow(state: MailState, mailbox: Mailbox, onDismiss: () ->
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        DmAvatar(mailbox.label, mailbox.address, 40.dp)
+        MuseAvatar(mailbox.label, mailbox.address, 40.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -633,7 +746,7 @@ private fun MailboxSheetRow(state: MailState, mailbox: Mailbox, onDismiss: () ->
         if (selected) {
             Icon(Icons.Default.Check, contentDescription = "当前", tint = palette.blue)
         } else {
-            DmBadge(mailbox.unread)
+            MuseBadge(mailbox.unread)
         }
         CopyAddressButton(mailbox.address)
     }
@@ -643,9 +756,9 @@ private fun MailboxSheetRow(state: MailState, mailbox: Mailbox, onDismiss: () ->
 /** 「邮箱」页里的身份行：与弹层行保持同一套视觉，但用卡片承载。 */
 @Composable
 private fun MailboxManageRow(state: MailState, mailbox: Mailbox) {
-    val palette = dm()
+    val palette = muse()
     val selected = mailbox.address == (state.currentMailbox ?: state.user?.email)
-    DmCard(
+    MuseCard(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
         onClick = { state.setMailbox(mailbox.address) }
     ) {
@@ -656,7 +769,7 @@ private fun MailboxManageRow(state: MailState, mailbox: Mailbox) {
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            DmAvatar(mailbox.label, mailbox.address, 40.dp)
+            MuseAvatar(mailbox.label, mailbox.address, 40.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -672,7 +785,7 @@ private fun MailboxManageRow(state: MailState, mailbox: Mailbox) {
             if (selected) {
                 Icon(Icons.Default.Check, contentDescription = "当前", tint = palette.blue)
             } else {
-                DmBadge(mailbox.unread)
+                MuseBadge(mailbox.unread)
             }
             CopyAddressButton(mailbox.address)
         }
@@ -681,7 +794,7 @@ private fun MailboxManageRow(state: MailState, mailbox: Mailbox) {
 
 @Composable
 private fun FolderRow(state: MailState) {
-    val palette = dm()
+    val palette = muse()
     Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
     ) {
@@ -708,7 +821,7 @@ private fun FolderRow(state: MailState) {
 
 @Composable
 private fun FilterRow(state: MailState) {
-    val palette = dm()
+    val palette = muse()
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -753,7 +866,7 @@ private fun FilterRow(state: MailState) {
 
 @Composable
 private fun MessageRow(state: MailState, message: MessageSummary) {
-    val palette = dm()
+    val palette = muse()
     val sender = message.fromName.ifBlank { message.from.ifBlank { "(未知发件人)" } }
     // 左滑进废纸篓（在废纸篓里再左滑就是彻底删除），右滑切换已读/未读。
     // 两边都是可逆操作，划完行自动弹回，不会卡在半路上。
@@ -815,7 +928,7 @@ private fun MessageRow(state: MailState, message: MessageSummary) {
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    DmAvatar(sender, message.from, 40.dp)
+                    MuseAvatar(sender, message.from, 40.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -887,7 +1000,7 @@ private fun MessageRow(state: MailState, message: MessageSummary) {
 
 @Composable
 private fun EmptyState(title: String, subtitle: String) {
-    val palette = dm()
+    val palette = muse()
     Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = 56.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -911,7 +1024,7 @@ private fun EmptyState(title: String, subtitle: String) {
 
 @Composable
 private fun DetailScreen(state: MailState) {
-    val palette = dm()
+    val palette = muse()
 
     // 拦截系统返回键 / 边缘返回手势，否则会直接 finish() 退出 App
     BackHandler(enabled = true) {
@@ -948,12 +1061,12 @@ private fun DetailScreen(state: MailState) {
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
             ) {
                 item {
-                    DmCard(modifier = Modifier.fillMaxWidth()) {
+                    MuseCard(modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(18.dp)) {
                             Text(detail.subject, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = palette.ink)
                             Spacer(Modifier.height(16.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                DmAvatar(detail.fromName.ifBlank { detail.from }, detail.from, 40.dp)
+                                MuseAvatar(detail.fromName.ifBlank { detail.from }, detail.from, 40.dp)
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(
@@ -976,7 +1089,7 @@ private fun DetailScreen(state: MailState) {
                 }
 
                 item {
-                    DmCard(modifier = Modifier.fillMaxWidth()) {
+                    MuseCard(modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(18.dp)) {
                             if (detail.html.isNotBlank()) {
                                 key(detail.id) {
@@ -1011,9 +1124,9 @@ private fun DetailScreen(state: MailState) {
 
                 if (detail.attachments.isNotEmpty()) {
                     item {
-                        DmCard(modifier = Modifier.fillMaxWidth()) {
+                        MuseCard(modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(18.dp)) {
-                                DmSectionTitle("附件 (${detail.attachments.size})")
+                                MuseSectionTitle("附件 (${detail.attachments.size})")
                                 detail.attachments.forEach { attachment ->
                                     Row(
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -1048,6 +1161,20 @@ private fun DetailScreen(state: MailState) {
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("打开已下载文件") }
                         Spacer(Modifier.height(10.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    val ok = saveDownloadedToDownloads(state.appContext, path, state.savedFileMime)
+                                    state.toast = if (ok) "已保存到下载文件夹" else "保存失败（需要 Android 10 及以上）"
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("保存到下载") }
+                            OutlinedButton(
+                                onClick = { shareDownloaded(state.appContext, path, state.savedFileMime) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("分享") }
+                        }
+                        Spacer(Modifier.height(10.dp))
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
@@ -1070,16 +1197,22 @@ private fun DetailScreen(state: MailState) {
 
 @Composable
 private fun ComposeScreen(state: MailState) {
-    val palette = dm()
+    val palette = muse()
     val context = LocalContext.current
-    var from by remember { mutableStateOf(state.currentMailbox ?: state.user?.email ?: "") }
-    var to by remember { mutableStateOf("") }
-    var cc by remember { mutableStateOf("") }
-    var subject by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
+    val savedDraft = remember { state.loadDraft() }
+    var from by remember { mutableStateOf(savedDraft?.str("from") ?: state.currentMailbox ?: state.user?.email ?: "") }
+    var to by remember { mutableStateOf(savedDraft?.str("to") ?: "") }
+    var cc by remember { mutableStateOf(savedDraft?.str("cc") ?: "") }
+    var subject by remember { mutableStateOf(savedDraft?.str("subject") ?: "") }
+    var body by remember { mutableStateOf(savedDraft?.str("body") ?: "") }
     var picked by remember { mutableStateOf(listOf<PickedFile>()) }
     var fromExpanded by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
+
+    // 有内容就自动存草稿（只存文本，附件不进草稿），发送或放弃时清除。
+    LaunchedEffect(from, to, cc, subject, body) {
+        state.saveDraft(from, to, cc, subject, body)
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) picked = picked + copyUriToCache(context, uri)
@@ -1104,6 +1237,7 @@ private fun ComposeScreen(state: MailState) {
             confirmButton = {
                 TextButton(onClick = {
                     showDiscardDialog = false
+                    state.clearDraft()
                     state.backToList()
                 }) { Text("放弃", color = palette.danger) }
             },
@@ -1146,7 +1280,15 @@ private fun ComposeScreen(state: MailState) {
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            DmCard(modifier = Modifier.fillMaxWidth()) {
+            if (savedDraft != null) {
+                Text(
+                    "已恢复上次未发出的草稿（附件需重新添加）",
+                    fontSize = 12.sp,
+                    color = palette.muted,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+            MuseCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Box {
                         Row(
@@ -1182,7 +1324,7 @@ private fun ComposeScreen(state: MailState) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            DmCard(modifier = Modifier.fillMaxWidth()) {
+            MuseCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     OutlinedTextField(
                         value = body,
@@ -1198,7 +1340,7 @@ private fun ComposeScreen(state: MailState) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            DmCard(modifier = Modifier.fillMaxWidth()) {
+            MuseCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     OutlinedButton(onClick = { picker.launch("*/*") }) {
                         Icon(Icons.Default.AttachFile, null)
@@ -1240,7 +1382,7 @@ private fun LabeledInput(
     type: KeyboardType
 ) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 12.sp, color = dm().muted, modifier = Modifier.width(56.dp))
+        Text(label, fontSize = 12.sp, color = muse().muted, modifier = Modifier.width(56.dp))
         OutlinedTextField(
             value = value,
             onValueChange = onChange,
@@ -1256,7 +1398,7 @@ private fun LabeledInput(
 
 @Composable
 private fun MailboxManageScreen(state: MailState) {
-    val palette = dm()
+    val palette = muse()
     LaunchedEffect(Unit) { state.loadSettings() }
     var prefix by remember { mutableStateOf("") }
     var domain by remember { mutableStateOf("") }
@@ -1280,12 +1422,12 @@ private fun MailboxManageScreen(state: MailState) {
 
         // 当前身份卡：完整地址 + 未读数，头像只出现在内容卡片里，不进导航栏
         item {
-            DmCard(modifier = Modifier.fillMaxWidth()) {
+            MuseCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    DmAvatar(activeTitle, current.ifBlank { activeTitle }, 46.dp)
+                    MuseAvatar(activeTitle, current.ifBlank { activeTitle }, 46.dp)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text("当前身份", fontSize = 11.sp, color = palette.muted)
@@ -1302,12 +1444,12 @@ private fun MailboxManageScreen(state: MailState) {
                             lineHeight = 17.sp
                         )
                     }
-                    active?.let { DmBadge(it.unread) }
+                    active?.let { MuseBadge(it.unread) }
                     CopyAddressButton(current)
                 }
             }
             Spacer(Modifier.height(16.dp))
-            DmSectionTitle("全部邮箱身份 · ${state.mailboxes.size}")
+            MuseSectionTitle("全部邮箱身份 · ${state.mailboxes.size}")
             Spacer(Modifier.height(8.dp))
         }
 
@@ -1325,11 +1467,11 @@ private fun MailboxManageScreen(state: MailState) {
 
         item {
             Spacer(Modifier.height(20.dp))
-            DmSectionTitle("无限别名")
+            MuseSectionTitle("无限别名")
             Spacer(Modifier.height(8.dp))
-            DmCard(modifier = Modifier.fillMaxWidth()) {
+            MuseCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    DmSectionTitle("新建别名")
+                    MuseSectionTitle("新建别名")
                     OutlinedTextField(
                         value = prefix,
                         onValueChange = { prefix = it },
@@ -1376,17 +1518,17 @@ private fun MailboxManageScreen(state: MailState) {
                 }
             }
             Spacer(Modifier.height(16.dp))
-            DmSectionTitle("已有 ${state.aliases.size} 个别名")
+            MuseSectionTitle("已有 ${state.aliases.size} 个别名")
             Spacer(Modifier.height(8.dp))
         }
 
         items(state.aliases, key = { it.id }) { alias: Alias ->
-            DmCard(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            MuseCard(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    DmAvatar(alias.address, alias.address, 38.dp)
+                    MuseAvatar(alias.address, alias.address, 38.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(alias.address, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = palette.ink)
@@ -1414,12 +1556,18 @@ private fun MailboxManageScreen(state: MailState) {
 
 @Composable
 private fun SettingsScreen(state: MailState) {
-    val palette = dm()
+    val palette = muse()
+    val context = LocalContext.current
     LaunchedEffect(Unit) { state.loadSettings() }
     var oldPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     val imap = state.clientConfig.obj("imap")
     val smtp = state.clientConfig.obj("smtp")
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) state.updateNotifyEnabled(true) else state.toast = "需要通知权限才能提醒新邮件"
+    }
 
     Column(
         Modifier
@@ -1430,9 +1578,9 @@ private fun SettingsScreen(state: MailState) {
         Text("设置", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = palette.ink)
         Spacer(Modifier.height(16.dp))
 
-        DmCard(modifier = Modifier.fillMaxWidth()) {
+        MuseCard(modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                DmAvatar(state.user?.displayName ?: "我", state.user?.email ?: "", 48.dp)
+                MuseAvatar(state.user?.displayName ?: "我", state.user?.email ?: "", 48.dp)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -1448,9 +1596,9 @@ private fun SettingsScreen(state: MailState) {
         }
 
         Spacer(Modifier.height(12.dp))
-        DmCard(modifier = Modifier.fillMaxWidth()) {
+        MuseCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                DmSectionTitle("账号信息")
+                MuseSectionTitle("账号信息")
                 InfoRow("服务器", state.savedBaseUrl)
                 InfoRow("已用容量", "${state.settings.long("usedMb")} / ${state.settings.long("quotaMb")} MB")
                 InfoRow("管理员", if (state.user?.isAdmin == true) "是" else "否")
@@ -1458,9 +1606,9 @@ private fun SettingsScreen(state: MailState) {
         }
 
         Spacer(Modifier.height(12.dp))
-        DmCard(modifier = Modifier.fillMaxWidth()) {
+        MuseCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                DmSectionTitle("外观")
+                MuseSectionTitle("外观")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1473,19 +1621,19 @@ private fun SettingsScreen(state: MailState) {
                     )
                     FilterChip(
                         selected = state.themeMode == "system",
-                        onClick = { state.setThemeMode("system") },
+                        onClick = { state.updateThemeMode("system") },
                         label = { Text("跟随系统") },
                         colors = chipColors
                     )
                     FilterChip(
                         selected = state.themeMode == "light",
-                        onClick = { state.setThemeMode("light") },
+                        onClick = { state.updateThemeMode("light") },
                         label = { Text("浅色") },
                         colors = chipColors
                     )
                     FilterChip(
                         selected = state.themeMode == "dark",
-                        onClick = { state.setThemeMode("dark") },
+                        onClick = { state.updateThemeMode("dark") },
                         label = { Text("深色") },
                         colors = chipColors
                     )
@@ -1506,7 +1654,7 @@ private fun SettingsScreen(state: MailState) {
                         }
                         Switch(
                             checked = state.dynamicColor,
-                            onCheckedChange = { state.setDynamicColor(it) }
+                            onCheckedChange = { state.updateDynamicColor(it) }
                         )
                     }
                 }
@@ -1514,19 +1662,131 @@ private fun SettingsScreen(state: MailState) {
         }
 
         Spacer(Modifier.height(12.dp))
-        DmCard(modifier = Modifier.fillMaxWidth()) {
+        MuseCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                DmSectionTitle("客户端配置")
+                MuseSectionTitle("新邮件通知")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("收到新邮件时提醒", fontSize = 14.sp, color = palette.ink)
+                        Text(
+                            "服务端没有推送通道，只能定时轮询（最省电是 60 分钟）",
+                            fontSize = 12.sp,
+                            color = palette.muted
+                        )
+                    }
+                    Switch(
+                        checked = state.notifyEnabled,
+                        onCheckedChange = { enabled ->
+                            if (!enabled) {
+                                state.updateNotifyEnabled(false)
+                                return@Switch
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(
+                                    context, Manifest.permission.POST_NOTIFICATIONS
+                                ) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                state.updateNotifyEnabled(true)
+                            }
+                        }
+                    )
+                }
+                if (state.notifyEnabled) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val chipColors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = palette.blueSoft,
+                            selectedLabelColor = palette.blue,
+                            containerColor = palette.cardBg,
+                            labelColor = palette.ink2
+                        )
+                        listOf(15L to "15 分钟", 30L to "30 分钟", 60L to "60 分钟").forEach { (minutes, label) ->
+                            FilterChip(
+                                selected = state.notifyIntervalMin == minutes,
+                                onClick = { state.updateNotifyInterval(minutes) },
+                                label = { Text(label) },
+                                colors = chipColors
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        MuseCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                MuseSectionTitle("安全")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("打开应用时验证", fontSize = 14.sp, color = palette.ink)
+                        Text(
+                            "指纹、面容或锁屏密码；只拦冷启动恢复会话",
+                            fontSize = 12.sp,
+                            color = palette.muted
+                        )
+                    }
+                    Switch(
+                        checked = state.biometricLock,
+                        onCheckedChange = { enabled ->
+                            if (!enabled) {
+                                state.updateBiometricLock(false)
+                                return@Switch
+                            }
+                            val can = BiometricManager.from(context)
+                                .canAuthenticate(lockAuthenticators())
+                            if (can == BiometricManager.BIOMETRIC_SUCCESS) {
+                                state.updateBiometricLock(true)
+                            } else {
+                                state.toast = "设备未设置可用的指纹、面容或锁屏密码"
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        MuseCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                MuseSectionTitle("客户端配置")
                 InfoRow("IMAP", "${imap.str("host")}:${imap.long("port")} ${imap.str("security")}")
                 InfoRow("SMTP", "${smtp.str("host")}:${smtp.long("port")} ${smtp.str("security")}")
                 InfoRow("Webmail", state.clientConfig.str("webmail"))
             }
         }
 
+        if (state.user?.isAdmin == true) {
+            Spacer(Modifier.height(12.dp))
+            MuseCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("管理后台", fontSize = 14.sp, color = palette.ink, fontWeight = FontWeight.SemiBold)
+                        Text("域名、用户、别名、发件箱、审计", fontSize = 12.sp, color = palette.muted)
+                    }
+                    OutlinedButton(onClick = { state.screen = Screen.Admin }) { Text("打开", color = palette.blue) }
+                }
+            }
+        }
+
         Spacer(Modifier.height(12.dp))
-        DmCard(modifier = Modifier.fillMaxWidth()) {
+        MuseCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                DmSectionTitle("修改密码")
+                MuseSectionTitle("修改密码")
                 OutlinedTextField(
                     value = oldPassword,
                     onValueChange = { oldPassword = it },
@@ -1582,8 +1842,8 @@ private fun SettingsScreen(state: MailState) {
 }
 
 @Composable
-private fun InfoRow(label: String, value: String) {
-    val palette = dm()
+fun InfoRow(label: String, value: String) {
+    val palette = muse()
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(label, color = palette.muted, fontSize = 12.sp, modifier = Modifier.width(78.dp))
         Text(value, fontSize = 12.sp, color = palette.ink2, modifier = Modifier.weight(1f))
@@ -1635,5 +1895,44 @@ private fun openDownloaded(context: Context, path: String, mime: String?) {
         context.startActivity(intent)
     } catch (e: Exception) {
         Toast.makeText(context, "打不开文件：${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** 把已下载的附件复制到系统下载文件夹（Android 10+，无需额外权限）。 */
+private fun saveDownloadedToDownloads(context: Context, path: String, mime: String?): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+    val file = File(path)
+    if (!file.exists()) return false
+    val values = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, file.name)
+        put(MediaStore.Downloads.MIME_TYPE, mime ?: "application/octet-stream")
+        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+    }
+    return try {
+        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: return false
+        context.contentResolver.openOutputStream(uri)?.use { out ->
+            FileInputStream(file).use { input -> input.copyTo(out) }
+        } ?: return false
+        true
+    } catch (e: Exception) {
+        false
+    }
+}
+
+/** 用系统分享框把已下载的附件发出去（微信、QQ、邮件等）。 */
+private fun shareDownloaded(context: Context, path: String, mime: String?) {
+    val file = File(path)
+    if (!file.exists()) return
+    try {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = mime ?: "application/octet-stream"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "分享附件"))
+    } catch (e: Exception) {
+        Toast.makeText(context, "分享失败：${e.message}", Toast.LENGTH_SHORT).show()
     }
 }

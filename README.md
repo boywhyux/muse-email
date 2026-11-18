@@ -30,7 +30,7 @@ Android 平台规定必须有一个 `Activity` 才能有窗口，所以不可能
 │  登录 / 列表 / 详情 / 写信 / 别名 / 设置                  │
 │       │  RustBridge.call(method, json) → json            │
 ├───────┼─────────────────────────────────────────────────┤
-│       ▼  JNI: Java_com_ifwqu_domainmail_RustBridge_...  │
+│       ▼  JNI: Java_com_muse_email_RustBridge_...  │
 │  domainmail-core (Rust cdylib, libdomainmail_core.so)    │
 │   ├ api.rs      dispatch(method)  → 53 个 REST 接口      │
 │   ├ client.rs   reqwest + rustls + dm_session Cookie     │
@@ -62,8 +62,8 @@ Android 平台规定必须有一个 `Activity` 才能有窗口，所以不可能
 │       ├── build.gradle.kts       # 签名回落逻辑
 │       └── src/main/
 │           ├── AndroidManifest.xml
-│           ├── java/com/ifwqu/domainmail/*.kt
-│           ├── java/com/ifwqu/domainmail/ui/Screens.kt
+│           ├── java/com/muse/email/*.kt
+│           ├── java/com/muse/email/ui/Screens.kt
 │           └── res/{values,values-night,xml}/
 ├── .github/workflows/
 │   ├── ci.yml                     # fmt / clippy / test
@@ -171,7 +171,7 @@ gradle assembleRelease --no-daemon
 3. 直接用 ubuntu-latest 预装的 Android SDK + `sdkmanager` 装 NDK 26.3.11579264 / platform 35 / build-tools 35.0.0（不用 `setup-android@v3`：它在新版 runner 上会因找不到旧 `tools` 包而失败）；
 4. `cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o .../jniLibs build --release -p domainmail-core`；
 5. `gradle assembleRelease`；
-6. `apksigner verify` 验签 → 上传 artifact `domainmail-android-apk`；
+6. `apksigner verify` 验签 → 上传 artifact `muse-email-android-apk`；
 7. 打 `v*` tag 时自动建 Release 并附上 APK。
 
 **签名与覆盖安装**：CI 每次都是全新 runner，Gradle 回落的 `debug.keystore` 会逐次随机生成，签名不一致 → 手机无法覆盖安装。所以 workflow 从仓库 Secrets 恢复**同一把固定密钥**（PKCS12），并注入 `DM_VERSION_CODE=github.run_number` 让 versionCode 单调递增：
@@ -187,7 +187,7 @@ DM_KEY_PASSWORD
 
 > 注意：换用新签名密钥后，第一次从旧版（v0.2.0 及之前）升级仍需**先卸载一次**——旧包是随机 debug key 签的。从这次发版起，后续版本之间就能直接覆盖安装了。
 
-**应用名与图标**：App 显示名为 **muse-email**（`res/values/strings.xml` 的 `app_name`）。`applicationId` 保持 `com.ifwqu.domainmail` 不变，改名不影响签名与覆盖安装。
+**应用名与图标**：App 显示名为 **muse-email**（`res/values/strings.xml` 的 `app_name`）。`applicationId` 保持 `com.muse.email` 不变，改名不影响签名与覆盖安装。
 
 图标使用用户提供的表情包形象（深棕波波头、大眼睛、红围巾、浅蓝背景）：
 
@@ -230,12 +230,24 @@ python tools/github_build.py all                 # push → dispatch → 等结�
 - **动态取色**：设置 → 外观，Android 12 及以上可开「动态取色」，主色跟随系统壁纸（`dynamicLightColorScheme` / `dynamicDarkColorScheme`）；只换主色，表面、文字、线条仍用自家调色盘。低于 Android 12 时开关不显示。
 - **滑动操作**：邮件行左滑进废纸篓（已在废纸篓里再左滑是彻底删除），右滑切换已读/未读；两边都是可逆操作，划完行自动弹回。删除用的是服务端 `DELETE /api/messages/:id`，移废纸篓用 `POST /api/messages/:id/move`。
 
+## 功能与瘦身更新（2026-11-18）
+
+- **新邮件通知**：设置 → 新邮件通知。服务端没有推送通道，用 WorkManager 每 15/30/60 分钟轮询一次收件箱未读，只对“上次见过之后新到的”发通知；App 内刷过列表会同步更新水位，已读过的不会再弹。首次开启那次只记水位、不通知。Android 13+ 开启时会先要通知权限。
+- **指纹锁**：设置 → 安全。打开后冷启动恢复会话时要先过指纹/面容/锁屏密码（Android 12+ 三选一，以下版本只认强生物识别）；密码登录成功后直接放行，不重复验证。验证失败或设备没设生物识别时，可走「清除登录状态并重新登录」（同时关掉指纹锁，不会死锁）。
+- **草稿自动保存**：写信时有内容就自动存到本机（只存文本字段，附件不进草稿），下次打开写信页自动恢复并提示；发送成功或点“放弃”时清除。服务端没有存草稿的接口，所以草稿只在本机，换手机就没了。
+- **管理后台**：设置页管理员账号可见「管理后台」入口。统计（用户/域名/邮件/今日新增/存储）、域名、用户、别名、发件箱（可重试/删除）、审计（最近 30 条）、服务器配置，都是只读总览加发件箱两个操作。字段名对照服务端 `src/web/routes.js` 与 `src/account.js` 核对过，缺失字段按空处理。
+- **附件另存/分享**：详情页下载附件后，除了「打开」，还有「保存到下载」（复制到系统下载文件夹，Android 10+，无需额外权限）和「分享」（系统分享框发微信/QQ/邮件等）。
+- **按 ABI 分包**：一次出 3 个包（`muse-email-arm64-v8a-*.apk` / `armeabi-v7a` / `x86_64`），各只含一套 Rust `.so`，手机只下自己那份，比通用包小 2–3 MB。三个包共用同一个 `versionCode`（CI 的 `run_number`），各设备只装自己 ABI 的包，不冲突；装错 ABI 的包会在启动时闪退（缺 `.so`），请按手机架构选（绝大多数现代手机是 arm64-v8a）。
+- **R8 压缩**：release 开启 `isMinifyEnabled` + `isShrinkResources`，应用自己的类全部保留（`proguard-rules.pro`），瘦身主要靠裁剪用不到的库代码和资源；`classes.dex` 32 MB 是大头，预期能压到 12 MB 左右。CI 仍校验每个包的 dex 含 Activity / JNI 桥、且恰好含 1 个 `.so`。
+- **版本 0.4.0**：`versionName` 升到 `0.4.0`；打 `v0.4.0` tag 会自动发 Release 并附上 3 个包。
+- **包名改成自己的**：`com.ifwqu.domainmail` → `com.muse.email`（namespace、applicationId、Kotlin 包、JNI 导出函数名 `Java_com_muse_email_RustBridge_nativeCall`、主题名、内部 `Dm*` 前缀全改）。Rust crate 名仍叫 `domainmail-core`，`.so` 仍叫 `libdomainmail_core.so`。**改包名等于新应用**：老包（0.3.0，com.ifwqu.domainmail）要先卸载再装新包，旧包的数据（登录会话、记住的密码、设置）不会迁移。
+
 ## 已知边界
 
-- 首版用轮询 + 手动刷新，没有接 `IDLE` / 推送（服务端 IMAP 支持 `IDLE`，但 REST 没有推送通道；后续可做 FCM 或轮询优化）。
-- 草稿箱目前是服务端文件夹展示，App 内没有本地草稿自动保存。
-- 管理后台接口已接好（管理员账号可用），UI 只做了个人设置页，没做管理后台界面。
-- `armeabi-v7a` 与 `x86_64`（模拟器）都出包；纯 64 位机器只装 `arm64-v8a` 的 so 也完全没问题。
+- 通知是轮询不是推送（服务端 REST 没有推送通道），最短 15 分钟一档；轮询要联网，省电模式下可能延迟。
+- 草稿只存本机文本，服务端没有存草稿接口；附件不进草稿。
+- 管理后台是只读总览 + 发件箱重试/删除；新建/编辑域名、用户、别名还没做（接口在 Rust 侧只接了 GET 和发件箱两个写操作）。
+- 指纹锁只在有保存会话的冷启动时出现；设备没有可用的生物识别或锁屏密码时开不了。
 
 ---
 

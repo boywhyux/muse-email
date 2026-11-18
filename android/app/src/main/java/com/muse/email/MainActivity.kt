@@ -1,15 +1,15 @@
-package com.ifwqu.domainmail
+package com.muse.email
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import com.ifwqu.domainmail.ui.DomainMailApp
+import androidx.fragment.app.FragmentActivity
+import com.muse.email.ui.MuseEmailApp
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            DomainMailApp()
+            MuseEmailApp()
         }
     }
 }

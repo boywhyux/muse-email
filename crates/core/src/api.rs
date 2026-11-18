@@ -1,4 +1,4 @@
-use crate::client::{ClientConfig, DmClient};
+use crate::client::{ClientConfig, MuseClient};
 use crate::error::{Error, Result};
 use crate::model::{
     get_bool, get_i64, get_opt_str, get_str, get_str_list, InitConfig, MessageQuery, FOLDERS,
@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// DomainMail REST API 的门面。Android(JNI) 与桌面 CLI 共用同一套实现。
 pub struct Api {
-    client: DmClient,
+    client: MuseClient,
     data_dir: Option<PathBuf>,
 }
 
@@ -23,7 +23,7 @@ impl Api {
         let data_dir = cfg.data_dir.as_ref().map(PathBuf::from);
         let store_path = data_dir.as_ref().map(|dir| dir.join("session.json"));
         let timeout = cfg.timeout_seconds.unwrap_or(20).clamp(1, 120) as u64;
-        let client = DmClient::new(ClientConfig {
+        let client = MuseClient::new(ClientConfig {
             base_url: cfg.base_url,
             allow_insecure_tls: cfg.allow_insecure_tls,
             timeout: Duration::from_secs(timeout),

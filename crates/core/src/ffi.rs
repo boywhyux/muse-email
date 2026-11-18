@@ -20,7 +20,7 @@ pub extern "system" fn JNI_OnLoad(_vm: JavaVM, _reserved: *mut c_void) -> jint {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_ifwqu_domainmail_RustBridge_nativeCall(
+pub extern "system" fn Java_com_muse_email_RustBridge_nativeCall(
     mut env: JNIEnv,
     _class: JClass,
     method: JString,

@@ -82,7 +82,7 @@ jobs:
         run: |
           # 每次 runner 都是全新的，Gradle 自带的 debug.keystore 逐次随机生成，
           # 签名不一致会导致手机无法覆盖安装。这里从 Actions Secret 恢复同一把密钥。
-          KEYSTORE="$RUNNER_TEMP/domainmail-release.p12"
+          KEYSTORE="$RUNNER_TEMP/muse-email-release.p12"
           echo "$DM_KEYSTORE_B64" | base64 -d > "$KEYSTORE"
           test -s "$KEYSTORE" || { echo "::error::签名密钥为空"; exit 1; }
           echo "DM_KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
@@ -107,13 +107,17 @@ jobs:
         working-directory: android
         run: gradle assembleRelease --no-daemon --stacktrace
 
+      # 分包后一次出 3 个 APK（每 ABI 一个），逐个验签。
       - name: Verify APK signature
         run: |
-          APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)
-          if [ -z "$APK" ]; then echo "::error::没有生成 APK"; exit 1; fi
-          echo "APK=$APK" >> "$GITHUB_ENV"
-          ls -lh "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | head -20
+          APKS=$(find android/app/build/outputs/apk/release -name '*.apk' | sort)
+          COUNT=$(echo "$APKS" | grep -c . || true)
+          if [ "$COUNT" -ne 3 ]; then echo "::error::应生成 3 个分包 APK，实际 $COUNT 个"; exit 1; fi
+          echo "$APKS" | while read -r APK; do
+            echo "== $APK =="
+            ls -lh "$APK"
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | head -8
+          done
 
       # Gradle 在没有任何 Kotlin 源文件时也能"构建成功"，产出的却是没有
       # Activity 的空壳 APK（装上直接闪退）。这里强制校验产物内容。
@@ -122,40 +126,44 @@ jobs:
           python3 - <<'PY'
           import glob, sys, zipfile
 
-          apks = glob.glob('android/app/build/outputs/apk/release/*.apk')
-          if not apks:
-              sys.exit('::error::没有找到 APK')
-          z = zipfile.ZipFile(apks[0])
-          dex = b''.join(z.read(n) for n in z.namelist() if n.endswith('.dex'))
+          apks = sorted(glob.glob('android/app/build/outputs/apk/release/*.apk'))
+          if len(apks) != 3:
+              sys.exit(f'::error::应生成 3 个分包 APK，实际 {len(apks)} 个: {apks}')
+          for apk in apks:
+              z = zipfile.ZipFile(apk)
+              dex = b''.join(z.read(n) for n in z.namelist() if n.endswith('.dex'))
 
-          required = [
-              b'Lcom/ifwqu/domainmail/MainActivity;',
-              b'Lcom/ifwqu/domainmail/RustBridge;',
-              b'nativeCall',
-              b'domainmail_core',
-          ]
-          missing = [s.decode() for s in required if s not in dex]
-          native = sorted(n for n in z.namelist() if n.endswith('libdomainmail_core.so'))
-          print('native libs:', native)
+              required = [
+                  b'Lcom/muse/email/MainActivity;',
+                  b'Lcom/muse/email/RustBridge;',
+                  b'nativeCall',
+                  b'domainmail_core',
+              ]
+              missing = [s.decode() for s in required if s not in dex]
+              native = sorted(n for n in z.namelist() if n.endswith('libdomainmail_core.so'))
+              print(apk, 'native libs:', native)
 
-          if missing:
-              sys.exit('::error::APK 的 dex 缺少应用类: ' + ', '.join(missing))
-          if len(native) < 3:
-              sys.exit('::error::APK 缺少多 ABI 的 Rust .so: ' + str(native))
-          print('APK 内容校验通过：Activity / JNI 桥 / 三 ABI native 库齐全')
+              if missing:
+                  sys.exit(f'::error::{apk} 的 dex 缺少应用类: ' + ', '.join(missing))
+              if len(native) != 1:
+                  sys.exit(f'::error::{apk} 应恰好含 1 个 Rust .so，实际: ' + str(native))
+          print('APK 内容校验通过：3 个分包各含 Activity / JNI 桥 / 自己 ABI 的 native 库')
           PY
 
       - name: Rename artifact
         run: |
           mkdir -p dist
           SAFE_REF="${GITHUB_REF_NAME//\//-}"
-          cp "$APK" "dist/domainmail-${SAFE_REF:-dev}.apk"
+          for APK in android/app/build/outputs/apk/release/*.apk; do
+            ABI=$(basename "$APK" | sed 's/^app-//; s/-release\.apk$//')
+            cp "$APK" "dist/muse-email-${ABI}-${SAFE_REF:-dev}.apk"
+          done
           ls -lh dist/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: domainmail-android-apk
+          name: muse-email-android-apk
           path: dist/*.apk
           if-no-files-found: error
 

@@ -5,18 +5,29 @@ plugins {
 }
 
 android {
-    namespace = "com.ifwqu.domainmail"
+    namespace = "com.muse.email"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.ifwqu.domainmail"
+        applicationId = "com.muse.email"
         minSdk = 26
         targetSdk = 35
         // 覆盖安装要求 versionCode 严格递增；CI 用 github.run_number 注入。
         versionCode = System.getenv("DM_VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = System.getenv("DM_VERSION_NAME") ?: "0.3.0"
+        versionName = System.getenv("DM_VERSION_NAME") ?: "0.4.0"
         // 与 build-apk.yml 里 cargo-ndk 交叉编译的三个 ABI 一致
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+    }
+
+    // 按 ABI 分包：三个包各只含一套 .so，手机只下自己那份，比通用包小 2-3 MB。
+    // versionCode 三个包共用同一个 run_number（各设备只装自己 ABI 的包，不冲突）。
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
+        }
     }
 
     signingConfigs {
@@ -40,8 +51,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // R8 开启：裁剪用不到的库代码、压缩资源。应用自己的类全部保留
+            //（见 proguard-rules.pro），瘦身主要靠库和资源，行为不受影响。
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = if (signingConfigs.findByName("release") != null) {
                 signingConfigs.getByName("release")
             } else {
@@ -79,6 +92,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
