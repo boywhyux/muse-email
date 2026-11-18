@@ -126,6 +126,20 @@ jobs:
             "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$APK" | head -8
           done
 
+      # 诊断版必须和 release 同一把密钥签名，否则手机拒绝覆盖安装。
+      # 直接比 apksigner 读出的证书指纹，不一致就失败，不让错签的包流出。
+      - name: Verify debug APK uses the same signing key
+        run: |
+          REL=$(find android/app/build/outputs/apk/release -name '*arm64-v8a*.apk' | head -1)
+          DBG=$(find android/app/build/outputs/apk/debug -name '*arm64-v8a*.apk' | head -1)
+          test -n "$REL" -a -n "$DBG" || { echo "::error::找不到 release/debug 的 arm64 包"; exit 1; }
+          APS="$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          REL_CERT=$("$APS" verify --print-certs "$REL" | grep -i 'certificate SHA-256' | awk '{print $NF}')
+          DBG_CERT=$("$APS" verify --print-certs "$DBG" | grep -i 'certificate SHA-256' | awk '{print $NF}')
+          echo "release cert: $REL_CERT"
+          echo "debug   cert: $DBG_CERT"
+          [ "$REL_CERT" = "$DBG_CERT" ] || { echo "::error::debug 包签名与 release 不一致，无法覆盖安装"; exit 1; }
+          echo "签名一致：debug 可直接覆盖安装 release 版"
       # Gradle 在没有任何 Kotlin 源文件时也能"构建成功"，产出的却是没有
       # Activity 的空壳 APK（装上直接闪退）。这里强制校验产物内容。
       - name: Verify APK actually contains app classes
