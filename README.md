@@ -254,6 +254,7 @@ python tools/github_build.py all                 # push → dispatch → 等结�
 - **字阶**：顶栏标题 16sp → 18sp，分区小标题 12sp → 13sp；其余字号不变。
 - **版本 0.5.0**：`versionName` 升到 `0.5.0`；包名、签名密钥不变，0.4.0 可直接覆盖安装升级。
 - **版本 0.5.1（闪退修复，2026-11-18）**：0.5.0 在红米 Note 10 5G（Android 13）上点开就闪退，0.4.0 正常。主题代码本身是纯 Kotlin、登录页也不用扩展图标，最大嫌疑是 AGP 9.1.0 的 R8 激进优化 + 新旧 Compose 伴生库混搭。修法：proguard 加 `-dontoptimize`（AGP 9 里 `android.enableR8.fullMode=false` 已废弃，这是官方认可的等价办法，只关优化、保留裁剪和混淆）；BOM 换到 `2026.08.00`，让整套 Compose 对齐 1.12.0。包名、签名不变，0.5.0 可直接覆盖安装。
+- **版本 0.5.2（闪退正式修复，2026-11-18）**：诊断版（不混淆、不剪资源）用户实测能打开并登录成功，证明闪退是打包压缩造成的、不是代码或库的问题。正式版只关 `isShrinkResources`（AGP 9 的 optimized resource shrinking 误剪了登录页要用的 Material 底图），代码混淆和 `-dontoptimize` 保持不变。版本 0.5.2、同包同签名，可直接覆盖安装。
 
 ## 已知边界
 

@@ -17,7 +17,7 @@ android {
         targetSdk = 35
         // 覆盖安装要求 versionCode 严格递增；CI 用 github.run_number 注入。
         versionCode = System.getenv("DM_VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = System.getenv("DM_VERSION_NAME") ?: "0.5.1"
+        versionName = System.getenv("DM_VERSION_NAME") ?: "0.5.2"
         // 注：不要在这里再加 ndk abiFilters——它和下面的 splits abi 冲突，
         // Gradle 会直接报 "Conflicting configuration"。三个 ABI 已在 splits 里列出，
         // 与 build-apk.yml 里 cargo-ndk 交叉编译的三个 ABI 一致。
@@ -64,10 +64,14 @@ android {
 
     buildTypes {
         release {
-            // R8 开启：裁剪用不到的库代码、压缩资源。应用自己的类全部保留
-            //（见 proguard-rules.pro），瘦身主要靠库和资源，行为不受影响。
+            // R8 开启：裁剪用不到的库代码。应用自己的类全部保留
+            //（见 proguard-rules.pro），瘦身主要靠库，行为不受影响。
+            // isShrinkResources 必须关：AGP 9 默认的 optimized resource shrinking
+            // 会误剪登录页要用的 Material 底图（0.5.1 正式包比 0.4.0 少 32 个
+            // 资源，0.5.0/0.5.1 都在启动时闪退；不压缩的诊断版能正常打开登录，
+            // 2026-11-18 用户红米 Note 10 5G 实测）。关掉只会让包稍大一点。
             isMinifyEnabled = true
-            isShrinkResources = true
+            isShrinkResources = false
             signingConfig = if (signingConfigs.findByName("release") != null) {
                 signingConfigs.getByName("release")
             } else {
