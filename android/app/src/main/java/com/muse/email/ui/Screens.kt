@@ -42,6 +42,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -53,15 +54,19 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Drafts
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material.icons.filled.MarkEmailRead
 import androidx.compose.material.icons.filled.MarkEmailUnread
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -73,8 +78,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -84,8 +91,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -96,12 +107,15 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
@@ -121,7 +135,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -146,6 +162,7 @@ import com.muse.email.formatDateFull
 import com.muse.email.long
 import com.muse.email.obj
 import com.muse.email.str
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileInputStream
 
@@ -459,114 +476,93 @@ private fun LoginScreen(state: MailState) {
 // ---------------- 主框架 ----------------
 
 @Composable
+// ---------------- 主界面（Gmail 风格，0.6.0） ----------------
+// 顶栏是 Gmail 式的圆角搜索条（菜单 + 搜索框 + 头像）；文件夹收进左侧抽屉；
+// 写信用右下角的浮动按钮，不再占底栏一格。主色仍是自家蓝色，只改结构。
+@Composable
 private fun MainScreen(state: MailState) {
     val palette = muse()
     var showMailboxSheet by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
 
-    // 在别名 / 设置页按返回，先回邮件页，不直接退出 App
-    BackHandler(enabled = state.tab != 0) {
-        state.tab = 0
+    fun closeDrawer() {
+        scope.launch { drawerState.close() }
     }
 
-    Scaffold(
-        containerColor = palette.appBg,
-        topBar = {
-            // 顶栏承载「当前身份」：品牌 + 常驻的完整邮箱地址 + 线性图标切换入口。
-            // 与底栏统一使用单色线性图标，不再出现彩色圆形头像那种异类元素。
-            TopAppBar(
-                title = {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showMailboxSheet = true },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        BrandMark(30)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "muse-email",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = palette.ink,
-                                lineHeight = 22.sp
-                            )
-                            // 副标题常驻当前邮箱，行尾箭头提示「可点开切换」
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    state.currentMailbox?.takeIf { it.isNotBlank() }
-                                        ?: state.user?.email?.takeIf { it.isNotBlank() }
-                                        ?: "未登录",
-                                    fontSize = 11.sp,
-                                    color = palette.muted,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    lineHeight = 14.sp,
-                                    modifier = Modifier.weight(1f, fill = false)
-                                )
-                                Spacer(Modifier.width(2.dp))
-                                Icon(
-                                    Icons.Default.ExpandMore,
-                                    contentDescription = null,
-                                    tint = palette.muted,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        }
-                    }
+    // 先关抽屉，再回邮件页，不直接退出 App
+    BackHandler(enabled = drawerState.isOpen || state.tab != 0) {
+        if (drawerState.isOpen) closeDrawer() else state.tab = 0
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            MailDrawer(
+                state = state,
+                onPickFolder = { folder ->
+                    state.setFolder(folder)
+                    state.tab = 0
+                    closeDrawer()
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.appBg),
-                actions = {
-                    CopyAddressButton(
-                        address = state.currentMailbox?.takeIf { it.isNotBlank() }
-                            ?: state.user?.email.orEmpty()
-                    )
-                    IconButton(onClick = { state.refresh() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新", tint = palette.ink2)
-                    }
-                }
+                onManageMailboxes = { state.tab = 1; closeDrawer() },
+                onSettings = { state.tab = 2; closeDrawer() },
+                onSwitchMailbox = { closeDrawer(); showMailboxSheet = true }
             )
-        },
-        bottomBar = {
-            // 四格完全同构：单色线性图标 + 两字名词 label + 同一套选中态。
-            // 与 domainmail/public 移动端规范一致：邮件 / 写信 / 邮箱 / 设置。
-            NavigationBar(containerColor = palette.cardBg, tonalElevation = 0.dp) {
-                MuseNavItem(
-                    selected = state.tab == 0,
-                    onClick = { state.tab = 0 },
-                    icon = Icons.Default.Inbox,
-                    label = "邮件",
-                    palette = palette
-                )
-                MuseNavItem(
-                    selected = false,
-                    onClick = { state.openCompose() },
-                    icon = Icons.Default.Edit,
-                    label = "写信",
-                    palette = palette
-                )
-                MuseNavItem(
-                    selected = state.tab == 1,
-                    onClick = { state.tab = 1 },
-                    icon = Icons.Default.MailOutline,
-                    label = "邮箱",
-                    palette = palette
-                )
-                MuseNavItem(
-                    selected = state.tab == 2,
-                    onClick = { state.tab = 2 },
-                    icon = Icons.Default.Settings,
-                    label = "设置",
-                    palette = palette
-                )
-            }
         }
-    ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
-            when (state.tab) {
-                0 -> MailListScreen(state)
-                1 -> MailboxManageScreen(state)
-                else -> SettingsScreen(state)
+    ) {
+        Scaffold(
+            containerColor = palette.appBg,
+            topBar = {
+                GmailSearchBar(
+                    state = state,
+                    onMenu = { scope.launch { drawerState.open() } },
+                    onAvatar = { showMailboxSheet = true }
+                )
+            },
+            bottomBar = {
+                NavigationBar(containerColor = palette.cardBg, tonalElevation = 0.dp) {
+                    MuseNavItem(
+                        selected = state.tab == 0,
+                        onClick = { state.tab = 0 },
+                        icon = Icons.Default.Inbox,
+                        label = "邮件",
+                        palette = palette
+                    )
+                    MuseNavItem(
+                        selected = state.tab == 1,
+                        onClick = { state.tab = 1 },
+                        icon = Icons.Default.MailOutline,
+                        label = "邮箱",
+                        palette = palette
+                    )
+                    MuseNavItem(
+                        selected = state.tab == 2,
+                        onClick = { state.tab = 2 },
+                        icon = Icons.Default.Settings,
+                        label = "设置",
+                        palette = palette
+                    )
+                }
+            },
+            floatingActionButton = {
+                if (state.tab == 0) {
+                    ExtendedFloatingActionButton(
+                        onClick = { state.openCompose() },
+                        icon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                        text = { Text("写信", fontWeight = FontWeight.SemiBold) },
+                        containerColor = palette.blue,
+                        contentColor = palette.onBlue
+                    )
+                }
+            }
+        ) { padding ->
+            Box(Modifier.padding(padding).fillMaxSize()) {
+                when (state.tab) {
+                    0 -> MailListScreen(state)
+                    1 -> MailboxManageScreen(state)
+                    else -> SettingsScreen(state)
+                }
             }
         }
     }
@@ -574,6 +570,197 @@ private fun MainScreen(state: MailState) {
     if (showMailboxSheet) {
         MailboxSheet(state) { showMailboxSheet = false }
     }
+}
+
+/** Gmail 式顶栏搜索条：菜单 + 搜索框 + 头像。点头像切换邮箱。 */
+@Composable
+private fun GmailSearchBar(
+    state: MailState,
+    onMenu: () -> Unit,
+    onAvatar: () -> Unit
+) {
+    val palette = muse()
+    val account = state.currentMailbox?.takeIf { it.isNotBlank() }
+        ?: state.user?.email?.takeIf { it.isNotBlank() } ?: ""
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = palette.cardBg,
+        shadowElevation = 2.dp,
+        tonalElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onMenu) {
+                Icon(Icons.Default.Menu, contentDescription = "文件夹", tint = palette.ink2)
+            }
+            TextField(
+                value = state.query,
+                onValueChange = { state.query = it },
+                placeholder = { Text("搜索邮件", color = palette.muted, fontSize = 15.sp) },
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 15.sp, color = palette.ink),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { state.search() }),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                    cursorColor = palette.blue
+                ),
+                modifier = Modifier.weight(1f)
+            )
+            if (state.query.isNotBlank()) {
+                IconButton(onClick = { state.query = ""; state.search() }) {
+                    Icon(Icons.Default.Close, contentDescription = "清除搜索", tint = palette.ink2)
+                }
+            } else {
+                IconButton(onClick = { state.search() }) {
+                    Icon(Icons.Default.Search, contentDescription = "搜索", tint = palette.ink2)
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .clickable { onAvatar() },
+                contentAlignment = Alignment.Center
+            ) {
+                MuseAvatar(account.ifBlank { "muse-email" }, account, 32.dp)
+            }
+        }
+    }
+}
+
+/** Gmail 式左侧抽屉：品牌 + 账号（点切换邮箱）+ 文件夹（带未读数）+ 邮箱 / 设置入口。 */
+@Composable
+private fun MailDrawer(
+    state: MailState,
+    onPickFolder: (String) -> Unit,
+    onManageMailboxes: () -> Unit,
+    onSettings: () -> Unit,
+    onSwitchMailbox: () -> Unit
+) {
+    val palette = muse()
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val account = state.currentMailbox?.takeIf { it.isNotBlank() }
+        ?: state.user?.email?.takeIf { it.isNotBlank() } ?: "未登录"
+    val itemColors = NavigationDrawerItemDefaults.colors(
+        selectedContainerColor = palette.blueSoft,
+        unselectedContainerColor = Color.Transparent,
+        selectedIconColor = palette.blue,
+        unselectedIconColor = palette.ink2,
+        selectedTextColor = palette.ink,
+        unselectedTextColor = palette.ink
+    )
+    ModalDrawerSheet(
+        drawerContainerColor = palette.appBg,
+        modifier = Modifier.width(300.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onSwitchMailbox() }
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BrandMark(34)
+                Spacer(Modifier.width(10.dp))
+                Text("muse-email", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = palette.ink)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                MuseAvatar(account, account, 32.dp)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    account,
+                    fontSize = 13.sp,
+                    color = palette.ink2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(account))
+                        Toast.makeText(context, "已复制邮箱地址", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "复制邮箱",
+                        tint = palette.muted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            Text("点上方切换邮箱", fontSize = 11.sp, color = palette.muted)
+        }
+        HorizontalDivider(color = palette.line)
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            state.folders.forEach { folder ->
+                val selected = state.currentFolder == folder.name
+                NavigationDrawerItem(
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                folderLabel(folder.name),
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (folder.unread > 0) {
+                                Text(
+                                    "${folder.unread}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selected) palette.blue else palette.ink2
+                                )
+                            }
+                        }
+                    },
+                    icon = { Icon(folderIcon(folder.name), contentDescription = null) },
+                    selected = selected,
+                    onClick = { onPickFolder(folder.name) },
+                    colors = itemColors,
+                    modifier = Modifier.padding(vertical = 1.dp)
+                )
+            }
+        }
+        HorizontalDivider(color = palette.line)
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            NavigationDrawerItem(
+                label = { Text("邮箱") },
+                icon = { Icon(Icons.Default.MailOutline, contentDescription = null) },
+                selected = state.tab == 1,
+                onClick = onManageMailboxes,
+                colors = itemColors
+            )
+            NavigationDrawerItem(
+                label = { Text("设置") },
+                icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                selected = state.tab == 2,
+                onClick = onSettings,
+                colors = itemColors
+            )
+        }
+    }
+}
+
+private fun folderIcon(name: String): androidx.compose.ui.graphics.vector.ImageVector = when (name) {
+    "INBOX" -> Icons.Default.Inbox
+    "Sent" -> Icons.Default.Send
+    "Drafts" -> Icons.Default.Drafts
+    "Trash" -> Icons.Default.Delete
+    "Junk" -> Icons.Default.Report
+    else -> Icons.Default.Label
 }
 
 /**
@@ -628,11 +815,7 @@ private fun MailListScreen(state: MailState) {
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
         item {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                FolderRow(state)
-                Spacer(Modifier.height(10.dp))
-                FilterRow(state)
-            }
+            FilterRow(state)
         }
 
         items(state.messages, key = { it.id }) { message ->
@@ -798,57 +981,20 @@ private fun MailboxManageRow(state: MailState, mailbox: Mailbox) {
     }
 }
 
-@Composable
-private fun FolderRow(state: MailState) {
-    val palette = muse()
-    Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-    ) {
-        state.folders.forEach { folder ->
-            FilterChip(
-                selected = state.currentFolder == folder.name,
-                onClick = { state.setFolder(folder.name) },
-                label = {
-                    Text(
-                        folderLabel(folder.name) + if (folder.unread > 0) " ${folder.unread}" else ""
-                    )
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = palette.blue,
-                    selectedLabelColor = palette.onBlue,
-                    containerColor = palette.cardBg,
-                    labelColor = palette.ink2
-                ),
-                modifier = Modifier.padding(end = 8.dp)
-            )
-        }
-    }
-}
-
+/** 列表顶部的瘦状态行：共几封 + 未读筛选。文件夹已搬进左侧抽屉，搜索在顶栏。 */
 @Composable
 private fun FilterRow(state: MailState) {
     val palette = muse()
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (state.showSearch) {
-            OutlinedTextField(
-                value = state.query,
-                onValueChange = { state.query = it },
-                placeholder = { Text("搜索邮件") },
-                singleLine = true,
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-            )
-            TextButton(onClick = { state.search() }) { Text("搜索", color = palette.blue) }
-        } else {
-            Text(
-                "共 ${state.total} 封",
-                fontSize = 12.sp,
-                color = palette.muted,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        Text(
+            "共 ${state.total} 封",
+            fontSize = 12.sp,
+            color = palette.muted,
+            modifier = Modifier.weight(1f)
+        )
         FilterChip(
             selected = state.unreadOnly,
             onClick = { state.toggleUnread() },
@@ -860,13 +1006,6 @@ private fun FilterRow(state: MailState) {
                 labelColor = palette.ink2
             )
         )
-        IconButton(onClick = { state.showSearch = !state.showSearch }) {
-            Icon(
-                if (state.showSearch) Icons.Default.Close else Icons.Default.Search,
-                contentDescription = "搜索",
-                tint = palette.ink2
-            )
-        }
     }
 }
 
