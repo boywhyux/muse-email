@@ -107,6 +107,13 @@ jobs:
         working-directory: android
         run: gradle assembleRelease --no-daemon --stacktrace
 
+      # 诊断版：不混淆、不裁剪、不压缩资源，代码和库与 release 版完全相同，
+      # 只用来定位闪退是不是 R8/资源压缩造成的。签名与 release 同一把密钥，
+      # 可以直接覆盖安装，不用卸载。
+      - name: Assemble debug APK (no minify, same key)
+        working-directory: android
+        run: gradle assembleDebug --no-daemon --stacktrace
+
       # 分包后一次出 3 个 APK（每 ABI 一个），逐个验签。
       - name: Verify APK signature
         run: |
@@ -157,6 +164,10 @@ jobs:
           for APK in android/app/build/outputs/apk/release/*.apk; do
             ABI=$(basename "$APK" | sed 's/^app-//; s/-release\.apk$//')
             cp "$APK" "dist/muse-email-${ABI}-${SAFE_REF:-dev}.apk"
+          done
+          for APK in android/app/build/outputs/apk/debug/*.apk; do
+            ABI=$(basename "$APK" | sed 's/^app-//; s/-debug\.apk$//')
+            cp "$APK" "dist/muse-email-${ABI}-debug-${SAFE_REF:-dev}.apk"
           done
           ls -lh dist/
 

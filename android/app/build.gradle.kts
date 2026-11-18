@@ -55,6 +55,19 @@ android {
                 keyPassword = (findProperty("dm.key.password") as String?)
                     ?: System.getenv("DM_KEY_PASSWORD") ?: ""
             }
+            // debug 也用同一把密钥：诊断版才能直接覆盖安装 release 版，不用卸载
+            //（卸载会清掉已保存的登录信息）。AGP 已预建了名叫 debug 的配置，
+            // 这里只是改它的值，不能再 create 一个同名的。
+            getByName("debug") {
+                storeFile = file(keystore)
+                storeType = "PKCS12"
+                storePassword = (findProperty("dm.keystore.password") as String?)
+                    ?: System.getenv("DM_KEYSTORE_PASSWORD") ?: ""
+                keyAlias = (findProperty("dm.key.alias") as String?)
+                    ?: System.getenv("DM_KEY_ALIAS") ?: ""
+                keyPassword = (findProperty("dm.key.password") as String?)
+                    ?: System.getenv("DM_KEY_PASSWORD") ?: ""
+            }
         }
     }
 
